@@ -161,10 +161,10 @@
       <tr><td><code>V 220</code> / <code>V LIVRE</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
       <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
       <tr><td><code>P TOLDO</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele)</td></tr>
-      <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita só fixo ou só distância; o resto da linha é a instrução)</td></tr>
+      <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita só fixo ou só distância; o resto da linha é a instrução; aliases <code>APÓS</code>/<code>AFTER</code>)</td></tr>
       <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>). Se a condicional for lateral (<code>DIR</code>/<code>P</code>), a aeronave mantém a proa de pista até disparar, em vez de engatar a SID aos 900 ft</td></tr>
       <tr><td><code>DIR GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela)</td></tr>
-      <tr><td><code>VIA</code></td><td>Descer via STAR — cumpre as restrições de altitude/velocidade da carta</td></tr>
+      <tr><td><code>VIA</code></td><td>Chegada: descer via STAR (cumpre as restrições da carta). Saída: <b>subir via SID</b> até o teto publicado — combine com a decolagem (<code>DEC 09R VIA</code>) ou com condicional (<code>DEC 09R APOS 5 VIA</code>)</td></tr>
       <tr><td><code>ILS 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
       <tr><td><code>AP</code> / <code>POUSO 09L</code></td><td>Autoriza o pouso (obrigatório antes de 1 NM final!)</td></tr>
       <tr><td><code>ALINHAR 09R</code></td><td>Alinhar e manter</td></tr>

@@ -247,11 +247,17 @@ const UI = (() => {
     if (a.state === 'holdshort') {
       btn('Alinhar ' + a.rwy, 'ALINHAR ' + a.rwy);
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
+      btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
     } else if (a.state === 'lineup') {
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
+      btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
     } else if (a.airborne) {
       if (a.kind === 'arr') {
         if (a.star && !a.via && a.nav.mode === 'route') btn('Descer VIA STAR', 'VIA', 'good');
+      } else if (a.sid && DATA.SIDS[a.sid] && a.clrAlt < (DATA.SIDS[a.sid].top || 15000)) {
+        btn('Subir VIA SID', 'VIA', 'good');
+      }
+      if (a.kind === 'arr') {
         if (a.app.phase === 'none') {
           btn('ILS ' + cfg.arrRwy, 'ILS ' + cfg.arrRwy, 'good');
           btn('ILS ' + cfg.depRwy, 'ILS ' + cfg.depRwy);

@@ -95,14 +95,14 @@
   },
 
   "sids": {
-    "ARENA1": { "cfg": "09", "exit": "ARENA", "name": "ARENA 1 (saída N)",  "route": ["VOLTA", "MORRO", "ARENA"] },
-    "BALSA1": { "cfg": "09", "exit": "BALSA", "name": "BALSA 1 (saída NE)", "route": ["RUMOS", "BALSA"] },
-    "CACTO1": { "cfg": "09", "exit": "CACTO", "name": "CACTO 1 (saída SE)", "route": ["TRILA", "CACTO"] },
-    "DENDE1": { "cfg": "09", "exit": "DENDE", "name": "DENDE 1 (saída SW)", "route": ["SERTA", "VALES", "DENDE"] },
-    "ARENA2": { "cfg": "27", "exit": "ARENA", "name": "ARENA 2 (saída N)",  "route": ["GIRAR", "SINOS", "ARENA"] },
-    "BALSA2": { "cfg": "27", "exit": "BALSA", "name": "BALSA 2 (saída NE)", "route": ["GIRAR", "SINOS", "BALSA"] },
-    "CACTO2": { "cfg": "27", "exit": "CACTO", "name": "CACTO 2 (saída SE)", "route": ["PONTE", "VARZE", "CACTO"] },
-    "DENDE2": { "cfg": "27", "exit": "DENDE", "name": "DENDE 2 (saída SW)", "route": ["PONTE", "VARZE", "DENDE"] }
+    "ARENA1": { "cfg": "09", "exit": "ARENA", "name": "ARENA 1 (saída N)",  "top": 15000, "route": ["VOLTA", "MORRO", "ARENA"] },
+    "BALSA1": { "cfg": "09", "exit": "BALSA", "name": "BALSA 1 (saída NE)", "top": 15000, "route": ["RUMOS", "BALSA"] },
+    "CACTO1": { "cfg": "09", "exit": "CACTO", "name": "CACTO 1 (saída SE)", "top": 15000, "route": ["TRILA", "CACTO"] },
+    "DENDE1": { "cfg": "09", "exit": "DENDE", "name": "DENDE 1 (saída SW)", "top": 15000, "route": ["SERTA", "VALES", "DENDE"] },
+    "ARENA2": { "cfg": "27", "exit": "ARENA", "name": "ARENA 2 (saída N)",  "top": 15000, "route": ["GIRAR", "SINOS", "ARENA"] },
+    "BALSA2": { "cfg": "27", "exit": "BALSA", "name": "BALSA 2 (saída NE)", "top": 15000, "route": ["GIRAR", "SINOS", "BALSA"] },
+    "CACTO2": { "cfg": "27", "exit": "CACTO", "name": "CACTO 2 (saída SE)", "top": 15000, "route": ["PONTE", "VARZE", "CACTO"] },
+    "DENDE2": { "cfg": "27", "exit": "DENDE", "name": "DENDE 2 (saída SW)", "top": 15000, "route": ["PONTE", "VARZE", "DENDE"] }
   },
 
   "dests": {

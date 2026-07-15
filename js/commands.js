@@ -86,7 +86,7 @@ const Commands = (() => {
         }
         case 'VIA': {
           r = ac.cmdVia(); used = 1;
-          if (!r.err) atcParts.push('desça via STAR ' + ac.star);
+          if (!r.err) atcParts.push(ac.kind === 'dep' ? 'suba via SID ' + ac.sid : 'desça via STAR ' + ac.star);
           break;
         }
         case 'ILS': {

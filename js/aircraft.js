@@ -143,6 +143,23 @@ class Aircraft {
     return { rb: 'Direto ' + fixName };
   }
   cmdVia() {
+    // saída: "subir via SID" — autoriza a subida até o teto publicado da carta.
+    // Vale no solo (junto com a decolagem: DEC 09R VIA) ou em voo.
+    if (this.kind === 'dep') {
+      const sid = this.sid && DATA.SIDS[this.sid];
+      if (!sid) return { err: 'não temos SID designada' };
+      const top = sid.top || 15000;
+      this.clrAlt = top;
+      // em voo e vetorado: subir via SID inclui retomar a navegação da carta
+      if (this.airborne && this.nav.mode !== 'route') {
+        const join = this.nearestOf(sid.route);
+        this.sidEngaged = true;
+        this.nav = { mode: 'route', route: sid.route.slice(sid.route.indexOf(join)), idx: 0 };
+        return { rb: 'Subir via SID ' + this.sid + ' para ' + U.fmtAlt(top) + ', direto ' + join };
+      }
+      return { rb: 'Subir via SID ' + this.sid + ' para ' + U.fmtAlt(top) };
+    }
+    // chegada: "descer via STAR" — cumpre as restrições da carta
     if (!this.star) return { err: 'não temos STAR designada' };
     if (this.nav.mode !== 'route') return { err: 'fora da STAR, solicite direto a um fixo da carta primeiro' };
     const rest = this.aheadRestrictions();
