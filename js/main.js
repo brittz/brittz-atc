@@ -433,7 +433,7 @@ const game = {
     this.nextArr = U.rnd(20, 35);
     this.nextDep = U.rnd(8, 15);
     this.spawnDeparture();
-    document.getElementById('cmdInput').focus();
+    if (!UI.isTouch) document.getElementById('cmdInput').focus();
   },
 };
 

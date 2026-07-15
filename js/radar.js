@@ -118,6 +118,7 @@ const Radar = (() => {
     };
     cv.addEventListener('touchstart', e => {
       e.preventDefault();
+      UI.dismissKeyboard(); // tocar no radar fecha o teclado do sistema
       if (e.touches.length === 1) {
         const [x, y] = pos(e.touches[0]);
         tPan = { x, y }; tMoved = false; tStart = { x, y, t: performance.now() };

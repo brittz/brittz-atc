@@ -6,6 +6,9 @@
 const UI = (() => {
   let game;
   const $ = id => document.getElementById(id);
+  // dispositivo de toque: nunca focar o input programaticamente
+  // (senão o teclado do sistema fica abrindo a toda hora)
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
   // ---------------- áudio ----------------
   let actx = null;
@@ -339,6 +342,7 @@ const UI = (() => {
       hIdx = -1;
       input.value = '';
       $('btnSend').classList.remove('pending');
+      if (isTouch) input.blur(); // fecha o teclado do sistema após transmitir
     }
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') transmit();
@@ -432,8 +436,13 @@ const UI = (() => {
     const input = $('cmdInput');
     input.value = text;
     $('btnSend').classList.add('pending');
-    if (!('ontouchstart' in window)) input.focus();
+    if (!isTouch) input.focus();
   }
 
-  return { init, logATC, logPilot, logSys, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, propose, refreshAtisModal };
+  // fecha o teclado do sistema se estiver aberto (chamado ao tocar no radar)
+  function dismissKeyboard() {
+    if (isTouch && document.activeElement === $('cmdInput')) $('cmdInput').blur();
+  }
+
+  return { init, logATC, logPilot, logSys, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, propose, refreshAtisModal, dismissKeyboard, isTouch };
 })();
