@@ -182,6 +182,8 @@ const UI = (() => {
     spd: { el: 'wSpd', min: 120, max: 340, step: 10, cmd: 'V', fmt: v => v + '' },
   };
   const wheelVals = { alt: 5000, hdg: 90, spd: 250 };
+  // roleta "tocada" (ajuste ainda não transmitido) não é sobrescrita pelo sync
+  const wheelStaged = { alt: false, hdg: false, spd: false };
   let wheelCs = null;  // callsign para o qual as roletas foram inicializadas
   let quickSig = '';   // assinatura do conjunto atual de botões rápidos
 
@@ -189,14 +191,35 @@ const UI = (() => {
     for (const [k, w] of Object.entries(WHEELS))
       document.querySelector('#' + w.el + ' .wv').textContent = w.fmt(wheelVals[k]);
   }
+  // valores de referência: a autorização vigente da aeronave
+  // ALT = autorizada · PROA = designada (vetor) ou atual · VEL = designada ou indicada
+  function wheelBasis(a) {
+    return {
+      alt: Math.max(2000, Math.min(24000, Math.round(a.clrAlt / 1000) * 1000 || 5000)),
+      hdg: (Math.round((a.nav.mode === 'hdg' ? a.nav.hdg : a.depHdg != null && a.onGround ? a.depHdg : a.hdg) / 5) * 5) % 360 || 360,
+      spd: Math.max(120, Math.min(340, Math.round((a.clrSpd > 0 ? a.clrSpd : a.spd || 250) / 10) * 10)),
+    };
+  }
   function wheelInitFor(a) {
     wheelCs = a.cs;
-    wheelVals.alt = Math.max(2000, Math.min(24000, Math.round(a.clrAlt / 1000) * 1000 || 5000));
-    wheelVals.hdg = (Math.round(a.hdg / 5) * 5) % 360 || 360;
-    wheelVals.spd = Math.max(120, Math.min(340, Math.round((a.clrSpd || a.spd || 250) / 10) * 10));
+    Object.assign(wheelVals, wheelBasis(a));
+    wheelStaged.alt = wheelStaged.hdg = wheelStaged.spd = false;
     wheelDisplay();
   }
+  // acompanha novas autorizações (ex.: V 210 dado por texto) sem apagar ajustes em curso
+  function wheelSync(a) {
+    const b = wheelBasis(a);
+    let changed = false;
+    for (const k of Object.keys(wheelVals)) {
+      if (!wheelStaged[k] && wheelVals[k] !== b[k]) { wheelVals[k] = b[k]; changed = true; }
+    }
+    if (changed) wheelDisplay();
+  }
+  function wheelUnstage() {
+    wheelStaged.alt = wheelStaged.hdg = wheelStaged.spd = false;
+  }
   function bumpWheel(k, dir) {
+    wheelStaged[k] = true;
     const w = WHEELS[k];
     let v = wheelVals[k] + dir * w.step;
     if (w.wrap) { if (v > w.max) v = w.min; if (v < w.min) v = w.max; }
@@ -247,6 +270,7 @@ const UI = (() => {
     p.classList.remove('hidden');
     q.classList.remove('hidden');
     if (wheelCs !== a.cs) wheelInitFor(a);
+    else wheelSync(a);
     $('selCs').textContent = a.cs + (a.emergency ? ' ⚠ EMERGÊNCIA' : '');
     $('selInfo').textContent =
       `${a.type}/${a.perf.wtc} · ${a.kind === 'arr' ? 'Chegada ' + (a.star || '') : 'Saída ' + (a.sid || '') + (a.dest ? ' → ' + a.dest : '')}`;
@@ -454,6 +478,7 @@ const UI = (() => {
       input.value = '';
       $('btnSend').classList.remove('pending');
       $('btnQuickSend').classList.remove('pending');
+      wheelUnstage(); // roletas voltam a espelhar a autorização vigente
       if (isTouch) input.blur(); // fecha o teclado do sistema após transmitir
     }
     input.addEventListener('keydown', e => {
