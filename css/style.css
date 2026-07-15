@@ -74,12 +74,38 @@ button.primary:hover { background: #1a5a42; }
 #banner.show { opacity: 1; }
 #banner.bad { color: var(--alert); border-color: var(--alert); background: #2a0d12; }
 
-/* painel da aeronave selecionada */
+/* cards da aeronave selecionada: informações + ações rápidas */
+#panelDock {
+  position: absolute; left: 12px; bottom: 88px; right: 12px;
+  display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap;
+  pointer-events: none;
+}
+#panelDock > div { pointer-events: auto; }
 #selPanel {
-  position: absolute; left: 12px; bottom: 88px; width: 330px; max-width: calc(100vw - 24px);
+  position: relative; width: 330px; max-width: calc(100vw - 24px);
   background: rgba(13, 21, 29, 0.94); border: 1px solid var(--line);
   border-radius: 4px; padding: 10px;
 }
+#quickPanel {
+  background: rgba(13, 21, 29, 0.94); border: 1px solid var(--line);
+  border-radius: 4px; padding: 8px 10px;
+  max-width: calc(100vw - 24px);
+}
+#wheelRow { display: flex; align-items: flex-end; gap: 10px; margin-top: 6px; }
+.wheel .wl { color: var(--dim); font-size: 9px; letter-spacing: 1px; text-align: center; margin-bottom: 3px; }
+.wheel .wc { display: flex; align-items: stretch; gap: 2px; }
+.wheel .wv {
+  min-width: 62px; text-align: center; padding: 8px 4px;
+  background: #06121a; border: 1px solid var(--line); border-radius: 3px;
+  color: var(--sel); font-size: 15px; font-weight: bold;
+  cursor: ns-resize; user-select: none; touch-action: none;
+}
+.wheel .wm, .wheel .wp { padding: 4px 10px; font-size: 15px; }
+#btnQuickSend {
+  font-size: 17px; padding: 8px 14px;
+  background: #0d2a1d; border-color: var(--good);
+}
+#btnQuickSend.pending { background: #1a5a42; box-shadow: 0 0 10px var(--good); }
 
 /* barra de comando sobre o radar */
 #cmdBar {
@@ -245,6 +271,9 @@ button.primary:hover { background: #1a5a42; }
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.6);
   }
   #selPanel { width: min(330px, calc(100vw - 24px)); }
+  #panelDock { bottom: 62px; gap: 6px; }
+  #wheelRow { gap: 6px; }
+  .wheel .wv { min-width: 54px; font-size: 14px; padding: 10px 3px; }
   #cmdHint { display: none; }
   #cmdBar { bottom: 10px; }
   #cmdBar #btnSend { padding: 4px 20px; }

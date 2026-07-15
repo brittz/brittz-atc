@@ -150,12 +150,78 @@ const UI = (() => {
     return a.kind === 'arr' ? 'STAR' : 'SUBIDA';
   }
 
-  // ---------------- painel de seleção ----------------
+  // ---------------- roletas de ajuste fino (ALT / PROA / VEL) ----------------
+  const WHEELS = {
+    alt: { el: 'wAlt', min: 2000, max: 24000, step: 1000, cmd: 'A',
+           fmt: v => v >= 10000 ? 'FL' + v / 100 : (v / 1000).toFixed(0) + '.000' },
+    hdg: { el: 'wHdg', min: 5, max: 360, step: 5, wrap: true, cmd: 'P', fmt: v => U.fmtHdg(v) },
+    spd: { el: 'wSpd', min: 120, max: 340, step: 10, cmd: 'V', fmt: v => v + '' },
+  };
+  const wheelVals = { alt: 5000, hdg: 90, spd: 250 };
+  let wheelCs = null; // callsign para o qual as roletas foram inicializadas
+
+  function wheelDisplay() {
+    for (const [k, w] of Object.entries(WHEELS))
+      document.querySelector('#' + w.el + ' .wv').textContent = w.fmt(wheelVals[k]);
+  }
+  function wheelInitFor(a) {
+    wheelCs = a.cs;
+    wheelVals.alt = Math.max(2000, Math.min(24000, Math.round(a.clrAlt / 1000) * 1000 || 5000));
+    wheelVals.hdg = (Math.round(a.hdg / 5) * 5) % 360 || 360;
+    wheelVals.spd = Math.max(120, Math.min(340, Math.round((a.clrSpd || a.spd || 250) / 10) * 10));
+    wheelDisplay();
+  }
+  function bumpWheel(k, dir) {
+    const w = WHEELS[k];
+    let v = wheelVals[k] + dir * w.step;
+    if (w.wrap) { if (v > w.max) v = w.min; if (v < w.min) v = w.max; }
+    else v = Math.max(w.min, Math.min(w.max, v));
+    wheelVals[k] = v;
+    wheelDisplay();
+  }
+  function proposeWheel(k) {
+    const a = game.selected;
+    if (!a || a.state === 'done') return;
+    const w = WHEELS[k];
+    propose(a.cs + ' ' + w.cmd + ' ' + (k === 'hdg' ? U.fmtHdg(wheelVals[k]) : wheelVals[k]));
+    $('btnQuickSend').classList.add('pending');
+  }
+  function attachWheel(k) {
+    const w = WHEELS[k];
+    const box = document.getElementById(w.el);
+    const val = box.querySelector('.wv');
+    box.querySelector('.wm').onclick = () => { bumpWheel(k, -1); proposeWheel(k); };
+    box.querySelector('.wp').onclick = () => { bumpWheel(k, +1); proposeWheel(k); };
+    val.addEventListener('wheel', e => { e.preventDefault(); bumpWheel(k, e.deltaY < 0 ? 1 : -1); proposeWheel(k); }, { passive: false });
+    // arrastar (mouse ou dedo): para cima aumenta, para baixo diminui
+    let lastY = null, dragged = false;
+    val.addEventListener('pointerdown', e => {
+      lastY = e.clientY; dragged = false;
+      val.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    val.addEventListener('pointermove', e => {
+      if (lastY === null) return;
+      let dy = lastY - e.clientY;
+      while (dy >= 12) { bumpWheel(k, 1); dy -= 12; lastY -= 12; dragged = true; }
+      while (dy <= -12) { bumpWheel(k, -1); dy += 12; lastY += 12; dragged = true; }
+    });
+    val.addEventListener('pointerup', () => {
+      if (dragged) proposeWheel(k);
+      lastY = null;
+    });
+    val.addEventListener('pointercancel', () => { lastY = null; });
+  }
+
+  // ---------------- painéis de seleção (informações + ações) ----------------
   function refreshSelPanel() {
     const p = $('selPanel');
+    const q = $('quickPanel');
     const a = game.selected;
-    if (!a || a.state === 'done') { p.classList.add('hidden'); return; }
+    if (!a || a.state === 'done') { p.classList.add('hidden'); q.classList.add('hidden'); wheelCs = null; return; }
     p.classList.remove('hidden');
+    q.classList.remove('hidden');
+    if (wheelCs !== a.cs) wheelInitFor(a);
     $('selCs').textContent = a.cs + (a.emergency ? ' ⚠ EMERGÊNCIA' : '');
     $('selInfo').textContent =
       `${a.type}/${a.perf.wtc} · ${a.kind === 'arr' ? 'Chegada ' + (a.star || '') : 'Saída ' + (a.sid || '') + (a.dest ? ' → ' + a.dest : '')}`;
@@ -168,14 +234,14 @@ const UI = (() => {
     $('selPend').innerHTML = (a.pending || []).map(p => '⏳ ' + p.label).join('<br>');
     $('selPend').style.display = (a.pending && a.pending.length) ? '' : 'none';
 
-    // botões contextuais
-    const q = $('quickBtns');
-    q.innerHTML = '';
+    // ações contextuais (o ajuste fino de ALT/PROA/VEL fica nas roletas)
+    const qb = $('quickBtns');
+    qb.innerHTML = '';
     const btn = (label, cmd, cls) => {
       const b = document.createElement('button');
       b.textContent = label; b.className = cls || '';
       b.onclick = () => game.runCommand(a.cs + ' ' + cmd);
-      q.appendChild(b);
+      qb.appendChild(b);
     };
     const cfg = DATA.CONFIGS[game.cfg];
     if (a.state === 'holdshort') {
@@ -196,11 +262,10 @@ const UI = (() => {
       } else {
         btn('Transferir ao Centro', 'HO', 'good');
       }
-      for (const alt of [3000, 4000, 5000, 6000, 8000, 10000, 12000])
-        if (Math.abs(alt - a.clrAlt) > 100) btn((alt < a.alt ? '↓' : '↑') + (alt >= 10000 ? 'FL' + alt / 100 : alt / 1000 + 'k'), 'A ' + alt, 'alt');
-      for (const v of [180, 200, 220, 250, 280]) btn(v + 'kt', 'V ' + v, 'spd');
       btn('Vel. livre', 'V LIVRE', 'spd');
     }
+    // roletas: em voo sempre; no solo só para saídas (autorizações pré-decolagem)
+    $('wheelRow').style.display = (a.airborne || (a.kind === 'dep' && a.state !== 'rollout')) ? '' : 'none';
   }
 
   // ---------------- cartas ----------------
@@ -342,6 +407,7 @@ const UI = (() => {
       hIdx = -1;
       input.value = '';
       $('btnSend').classList.remove('pending');
+      $('btnQuickSend').classList.remove('pending');
       if (isTouch) input.blur(); // fecha o teclado do sistema após transmitir
     }
     input.addEventListener('keydown', e => {
@@ -351,6 +417,8 @@ const UI = (() => {
       else if (e.key === 'Escape') { input.value = ''; game.select(null); }
     });
     $('btnSend').onclick = transmit;
+    $('btnQuickSend').onclick = transmit;
+    for (const k of Object.keys(WHEELS)) attachWheel(k);
     // seleção preenche o callsign
     document.addEventListener('keydown', e => {
       if (e.target === input) return;

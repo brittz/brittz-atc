@@ -34,13 +34,32 @@
     <canvas id="radar"></canvas>
     <div id="pausedTag" class="hidden">SIMULAÇÃO PAUSADA</div>
     <div id="banner"></div>
-    <div id="selPanel" class="hidden">
-      <button id="selClose" title="Desselecionar (Esc)">✕</button>
-      <div id="selCs">—</div>
-      <div id="selInfo"></div>
-      <div id="selData"></div>
-      <div id="selPend"></div>
-      <div id="quickBtns"></div>
+    <div id="panelDock">
+      <div id="selPanel" class="hidden">
+        <button id="selClose" title="Desselecionar (Esc)">✕</button>
+        <div id="selCs">—</div>
+        <div id="selInfo"></div>
+        <div id="selData"></div>
+        <div id="selPend"></div>
+      </div>
+      <div id="quickPanel" class="hidden">
+        <div id="quickBtns"></div>
+        <div id="wheelRow">
+          <div class="wheel" id="wAlt">
+            <div class="wl">ALTITUDE</div>
+            <div class="wc"><button class="wm">−</button><div class="wv" title="Arraste ou role para ajustar">FL120</div><button class="wp">+</button></div>
+          </div>
+          <div class="wheel" id="wHdg">
+            <div class="wl">PROA</div>
+            <div class="wc"><button class="wm">−</button><div class="wv" title="Arraste ou role para ajustar">090</div><button class="wp">+</button></div>
+          </div>
+          <div class="wheel" id="wSpd">
+            <div class="wl">VELOC.</div>
+            <div class="wc"><button class="wm">−</button><div class="wv" title="Arraste ou role para ajustar">250</div><button class="wp">+</button></div>
+          </div>
+          <button id="btnQuickSend" title="Transmitir o comando montado">📡</button>
+        </div>
+      </div>
     </div>
     <div id="cmdBar">
       <input id="cmdInput" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters"
