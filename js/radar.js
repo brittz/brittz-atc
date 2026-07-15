@@ -379,14 +379,14 @@ const Radar = (() => {
     lines.forEach((t, i) => t && ctx.fillText(t, bx, by + i * 12));
   }
 
-  // leitura do cursor (canto inferior direito, longe do painel de seleção)
-  // e régua aeronave selecionada → cursor
+  // leitura do cursor (canto superior direito, livre do painel e da barra
+  // de comando) e régua aeronave selecionada → cursor
   function drawCursorInfo() {
     if (!mouse.inside) return;
     const [wx, wy] = toWorld(mouse.x, mouse.y);
     ctx.textAlign = 'right';
     ctx.fillStyle = C.ringTxt;
-    ctx.fillText(`APT ${U.fmtHdg(U.brg(0, 0, wx, wy))}° / ${U.dist(0, 0, wx, wy).toFixed(1)} NM`, vw - 12, vh - 76);
+    ctx.fillText(`APT ${U.fmtHdg(U.brg(0, 0, wx, wy))}° / ${U.dist(0, 0, wx, wy).toFixed(1)} NM`, vw - 12, 20);
 
     const s = game.selected;
     if (s && s.airborne) {
@@ -398,7 +398,7 @@ const Radar = (() => {
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
       ctx.restore();
       ctx.fillStyle = C.sel;
-      ctx.fillText(`${s.cs} ${U.fmtHdg(brg)}° / ${dst.toFixed(1)} NM`, vw - 12, vh - 62);
+      ctx.fillText(`${s.cs} ${U.fmtHdg(brg)}° / ${dst.toFixed(1)} NM`, vw - 12, 36);
       ctx.textAlign = 'left';
       ctx.fillText(`${U.fmtHdg(brg)}°/${dst.toFixed(1)}`, mouse.x + 14, mouse.y - 10);
     }
