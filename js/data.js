@@ -1,138 +1,15 @@
 // ============================================================
-// ATC Costa Verde — dados do espaço aéreo (SBCV fictício)
+// ATC Costa Verde — dados globais e carregador de aeroportos
+// O espaço aéreo (fixos, pistas, STARs, SIDs) vive em airports/*.json.
 // Coordenadas em milhas náuticas. Origem = centro do aeroporto.
 // +x = leste, +y = norte. Proas em graus (0 = norte, horário).
 // ============================================================
 'use strict';
 
-const DATA = (() => {
-
-  // ---------- Fixos ----------
-  const FIXES = {
-    // Entradas da TMA (cantos)
-    SABIA: [-40, 42], COSTA: [-42, -38], PEDRA: [42, 40], TRIGO: [44, -36],
-    // Terminal oeste (fluxo 09)
-    TUCAN: [-36, 26], PREMA: [-29, 13], NIDOL: [-23, 5], GOMES: [-13, 0],
-    MANGA: [-35, -24], PALMA: [-28, -11], SOLAR: [-22, -4],
-    // Perna do vento norte/sul (entradas leste no fluxo 09)
-    LAGOA: [18, 27], VERDE: [-4, 21], NORTE: [-18, 14],
-    BREJO: [16, -25], CAJUZ: [-6, -19], SULFI: [-19, -12],
-    // Terminal leste (fluxo 27)
-    TIGRE: [36, 25], ROCHA: [29, 12], DUNAS: [23, 5], FAROL: [13, 0],
-    SERRA: [35, -23], PRAIA: [28, -10], CORAL: [22, -4],
-    LENCO: [-18, 27], VINHA: [4, 21], NOBRE: [18, 14],
-    CINZA: [-16, -25], TOLDO: [6, -19], BURIT: [19, -12],
-    // SIDs
-    VOLTA: [9, 6], MORRO: [6, 24], ARENA: [2, 52],
-    RUMOS: [12, 3], BALSA: [46, 26],
-    TRILA: [12, -4], CACTO: [46, -24],
-    SERTA: [8, -8], VALES: [-2, -26], DENDE: [-10, -50],
-    GIRAR: [-9, 6], SINOS: [-6, 24], PONTE: [-11, -4], VARZE: [-4, -22],
-  };
-
-  // ---------- Pistas ----------
-  // thr = cabeceira; hdg = rumo de pouso/decolagem; len em NM
-  const RUNWAYS = {
-    '09L': { thr: [-0.95,  0.4], hdg:  90, len: 1.9, opp: '27R' },
-    '27R': { thr: [ 0.95,  0.4], hdg: 270, len: 1.9, opp: '09L' },
-    '09R': { thr: [-0.95, -0.4], hdg:  90, len: 1.9, opp: '27L' },
-    '27L': { thr: [ 0.95, -0.4], hdg: 270, len: 1.9, opp: '09R' },
-  };
-  // pares físicos (ocupação vale para os dois sentidos)
-  const RWY_PAIR = { '09L':'N', '27R':'N', '09R':'S', '27L':'S' };
-
-  // ---------- STARs ----------
-  // route: [{fix, alt, spd}] — restrições "cruzar a" (usadas no "descer via")
-  const STARS = {
-    // ----- fluxo 09 (aproximação pelo oeste) -----
-    SABIA1: { cfg:'09', entry:'SABIA', name:'SABIA 1 (chegada NW)', route: [
-      { fix:'SABIA', alt:16000, spd:290 },
-      { fix:'TUCAN', alt:12000, spd:280 },
-      { fix:'PREMA', alt: 9000, spd:250 },
-      { fix:'NIDOL', alt: 6000, spd:220 },
-      { fix:'GOMES', alt: 4000, spd:200 },
-    ]},
-    COSTA1: { cfg:'09', entry:'COSTA', name:'COSTA 1 (chegada SW)', route: [
-      { fix:'COSTA', alt:16000, spd:290 },
-      { fix:'MANGA', alt:12000, spd:280 },
-      { fix:'PALMA', alt: 9000, spd:250 },
-      { fix:'SOLAR', alt: 6000, spd:220 },
-      { fix:'GOMES', alt: 4000, spd:200 },
-    ]},
-    PEDRA1: { cfg:'09', entry:'PEDRA', name:'PEDRA 1 (chegada NE)', route: [
-      { fix:'PEDRA', alt:16000, spd:290 },
-      { fix:'LAGOA', alt:14000, spd:280 },
-      { fix:'VERDE', alt:11000, spd:250 },
-      { fix:'NORTE', alt: 8000, spd:220 },
-      { fix:'NIDOL', alt: 6000, spd:200 },
-      { fix:'GOMES', alt: 4000, spd:180 },
-    ]},
-    TRIGO1: { cfg:'09', entry:'TRIGO', name:'TRIGO 1 (chegada SE)', route: [
-      { fix:'TRIGO', alt:16000, spd:290 },
-      { fix:'BREJO', alt:14000, spd:280 },
-      { fix:'CAJUZ', alt:11000, spd:250 },
-      { fix:'SULFI', alt: 8000, spd:220 },
-      { fix:'SOLAR', alt: 6000, spd:200 },
-      { fix:'GOMES', alt: 4000, spd:180 },
-    ]},
-    // ----- fluxo 27 (aproximação pelo leste) -----
-    PEDRA2: { cfg:'27', entry:'PEDRA', name:'PEDRA 2 (chegada NE)', route: [
-      { fix:'PEDRA', alt:16000, spd:290 },
-      { fix:'TIGRE', alt:12000, spd:280 },
-      { fix:'ROCHA', alt: 9000, spd:250 },
-      { fix:'DUNAS', alt: 6000, spd:220 },
-      { fix:'FAROL', alt: 4000, spd:200 },
-    ]},
-    TRIGO2: { cfg:'27', entry:'TRIGO', name:'TRIGO 2 (chegada SE)', route: [
-      { fix:'TRIGO', alt:16000, spd:290 },
-      { fix:'SERRA', alt:12000, spd:280 },
-      { fix:'PRAIA', alt: 9000, spd:250 },
-      { fix:'CORAL', alt: 6000, spd:220 },
-      { fix:'FAROL', alt: 4000, spd:200 },
-    ]},
-    SABIA2: { cfg:'27', entry:'SABIA', name:'SABIA 2 (chegada NW)', route: [
-      { fix:'SABIA', alt:16000, spd:290 },
-      { fix:'LENCO', alt:14000, spd:280 },
-      { fix:'VINHA', alt:11000, spd:250 },
-      { fix:'NOBRE', alt: 8000, spd:220 },
-      { fix:'DUNAS', alt: 6000, spd:200 },
-      { fix:'FAROL', alt: 4000, spd:180 },
-    ]},
-    COSTA2: { cfg:'27', entry:'COSTA', name:'COSTA 2 (chegada SW)', route: [
-      { fix:'COSTA', alt:16000, spd:290 },
-      { fix:'CINZA', alt:14000, spd:280 },
-      { fix:'TOLDO', alt:11000, spd:250 },
-      { fix:'BURIT', alt: 8000, spd:220 },
-      { fix:'CORAL', alt: 6000, spd:200 },
-      { fix:'FAROL', alt: 4000, spd:180 },
-    ]},
-  };
-
-  // ---------- SIDs ----------
-  // subida inicial: proa da pista até 900 ft AGL, depois navega pelos fixos.
-  // teto inicial 5000 ft — o controlador libera a subida.
-  const SIDS = {
-    ARENA1: { cfg:'09', exit:'ARENA', name:'ARENA 1 (saída N)',  route:['VOLTA','MORRO','ARENA'] },
-    BALSA1: { cfg:'09', exit:'BALSA', name:'BALSA 1 (saída NE)', route:['RUMOS','BALSA'] },
-    CACTO1: { cfg:'09', exit:'CACTO', name:'CACTO 1 (saída SE)', route:['TRILA','CACTO'] },
-    DENDE1: { cfg:'09', exit:'DENDE', name:'DENDE 1 (saída SW)', route:['SERTA','VALES','DENDE'] },
-    ARENA2: { cfg:'27', exit:'ARENA', name:'ARENA 2 (saída N)',  route:['GIRAR','SINOS','ARENA'] },
-    BALSA2: { cfg:'27', exit:'BALSA', name:'BALSA 2 (saída NE)', route:['GIRAR','SINOS','BALSA'] },
-    CACTO2: { cfg:'27', exit:'CACTO', name:'CACTO 2 (saída SE)', route:['PONTE','VARZE','CACTO'] },
-    DENDE2: { cfg:'27', exit:'DENDE', name:'DENDE 2 (saída SW)', route:['PONTE','VARZE','DENDE'] },
-  };
-
-  // destinos ilustrativos por saída (só para as strips)
-  const DESTS = {
-    ARENA: ['SBFZ','SBRF','TNCA','KMIA'],
-    BALSA: ['SBSV','GVAC','LPPT','LEMD'],
-    CACTO: ['SBGL','SBGR','SBKP','SBCF'],
-    DENDE: ['SBPA','SBFL','SAEZ','SCEL'],
-  };
-
-  // ---------- Tipos de aeronave ----------
+const DATA = {
+  // ---------- Tipos de aeronave (frota global) ----------
   // climb/desc em ft/min, accel em kt/s, velocidades em kt IAS
-  const TYPES = {
+  TYPES: {
     A320: { climb: 2300, desc: 2000, accel: 1.4, vr: 140, app: 137, min: 125, max: 340, wtc: 'M' },
     A20N: { climb: 2400, desc: 2000, accel: 1.4, vr: 138, app: 136, min: 125, max: 340, wtc: 'M' },
     B738: { climb: 2300, desc: 2100, accel: 1.4, vr: 145, app: 141, min: 130, max: 340, wtc: 'M' },
@@ -141,36 +18,55 @@ const DATA = (() => {
     AT76: { climb: 1350, desc: 1500, accel: 1.1, vr: 115, app: 113, min: 105, max: 270, wtc: 'M' },
     B77W: { climb: 1900, desc: 1800, accel: 1.2, vr: 155, app: 145, min: 135, max: 350, wtc: 'H' },
     B789: { climb: 2000, desc: 1900, accel: 1.2, vr: 150, app: 142, min: 132, max: 350, wtc: 'H' },
-  };
+  },
 
   // companhias: prefixo, nome rádio, tipos que operam, peso p/ sorteio
-  const AIRLINES = [
-    { code:'TAM', radio:'LATAM',      types:['A320','A21N','A20N','B77W'], w:5 },
-    { code:'GLO', radio:'Gol',        types:['B738'],                      w:5 },
-    { code:'AZU', radio:'Azul',       types:['E195','A20N','AT76'],        w:5 },
-    { code:'PTB', radio:'Passaredo',  types:['AT76'],                      w:1 },
-    { code:'TAP', radio:'Air Portugal', types:['A21N','B789'],             w:1 },
-    { code:'ARG', radio:'Argentina',  types:['B738'],                      w:1 },
-    { code:'AAL', radio:'American',   types:['B77W','B789'],               w:1 },
-    { code:'AFR', radio:'Air France', types:['B77W'],                      w:1 },
-  ];
+  // (um aeroporto pode substituir via campo "airlines" no seu JSON)
+  AIRLINES: [
+    { code:'TAM', radio:'LATAM',        types:['A320','A21N','A20N','B77W'], w:5 },
+    { code:'GLO', radio:'Gol',          types:['B738'],                      w:5 },
+    { code:'AZU', radio:'Azul',         types:['E195','A20N','AT76'],        w:5 },
+    { code:'PTB', radio:'Passaredo',    types:['AT76'],                      w:1 },
+    { code:'TAP', radio:'Air Portugal', types:['A21N','B789'],               w:1 },
+    { code:'ARG', radio:'Argentina',    types:['B738'],                      w:1 },
+    { code:'AAL', radio:'American',     types:['B77W','B789'],               w:1 },
+    { code:'AFR', radio:'Air France',   types:['B77W'],                      w:1 },
+  ],
 
-  const AIRPORT = {
-    icao: 'SBCV',
-    name: 'Costa Verde Intl',
-    elev: 26,          // ft (desprezível — jogo usa MSL≈AGL)
-    range: 60,         // raio da TMA em NM
-    gsSlopeFtNm: 318,  // rampa de 3° ≈ 318 ft por NM
-  };
+  // ---------- espaço aéreo ativo (preenchido por setAirport) ----------
+  FIXES: {}, RUNWAYS: {}, RWY_PAIR: {}, STARS: {}, SIDS: {}, DESTS: {},
+  CONFIGS: {}, AIRPORT: { icao: '----', name: '', elev: 0, range: 60, gsSlopeFtNm: 318 },
 
-  // configurações operacionais
-  const CONFIGS = {
-    '09': { arrRwy:'09L', depRwy:'09R', wind:{dir:80,  spd:9}, label:'Fluxo LESTE — pousos 09L, decolagens 09R' },
-    '27': { arrRwy:'27R', depRwy:'27L', wind:{dir:260, spd:9}, label:'Fluxo OESTE — pousos 27R, decolagens 27L' },
-  };
+  setAirport(j) {
+    this.FIXES = j.fixes;
+    this.RUNWAYS = j.runways;
+    this.RWY_PAIR = j.rwyPair;
+    this.STARS = j.stars;
+    this.SIDS = j.sids;
+    this.DESTS = j.dests;
+    this.CONFIGS = j.configs;
+    this.AIRPORT = {
+      icao: j.icao, name: j.name, elev: j.elev ?? 0,
+      range: j.range ?? 60, gsSlopeFtNm: j.gsSlopeFtNm ?? 318,
+      defaultCfg: j.defaultCfg ?? Object.keys(j.configs)[0],
+    };
+    if (j.airlines) this.AIRLINES = j.airlines;
+  },
 
-  return { FIXES, RUNWAYS, RWY_PAIR, STARS, SIDS, DESTS, TYPES, AIRLINES, AIRPORT, CONFIGS };
-})();
+  async loadAirport(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('Falha ao carregar ' + url + ' (' + r.status + ')');
+    const j = await r.json();
+    this.setAirport(j);
+    return j;
+  },
+
+  async loadManifest() {
+    const r = await fetch('airports/index.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('Falha ao carregar airports/index.json');
+    return r.json();
+  },
+};
 
 // ---------- utilidades geométricas ----------
 const U = {

@@ -1,12 +1,13 @@
 // ============================================================
-// Radar: renderização em canvas, pan/zoom, seleção
+// Radar: renderização em canvas (HiDPI), pan/zoom, mouse e toque
 // ============================================================
 'use strict';
 
 const Radar = (() => {
   let cv, ctx, game;
-  let scale = 7;              // px por NM
+  let scale = 7;              // px (CSS) por NM
   let cx = 0, cy = 0;         // centro da vista em NM
+  let vw = 0, vh = 0, dpr = 1; // dimensões lógicas e densidade de pixels
   let sweep = 0;
   let mouse = { x: 0, y: 0, down: false, moved: false, sx: 0, sy: 0 };
 
@@ -18,10 +19,64 @@ const Radar = (() => {
   };
 
   function toScreen(x, y) {
-    return [cv.width / 2 + (x - cx) * scale, cv.height / 2 - (y - cy) * scale];
+    return [vw / 2 + (x - cx) * scale, vh / 2 - (y - cy) * scale];
   }
   function toWorld(px, py) {
-    return [(px - cv.width / 2) / scale + cx, -(py - cv.height / 2) / scale + cy];
+    return [(px - vw / 2) / scale + cx, -(py - vh / 2) / scale + cy];
+  }
+
+  function setZoom(newScale, px, py) {
+    const [wx, wy] = toWorld(px, py);
+    scale = Math.max(2.5, Math.min(80, newScale));
+    const [nx, ny] = toWorld(px, py);
+    cx += wx - nx; cy += wy - ny;
+  }
+
+  // ---------------- interação ----------------
+  // tap/clique: seleciona aeronave; com aeronave selecionada, tocar num fixo
+  // monta "DIR fixo" e tocar numa cabeceira monta "ILS"/"DEC" (confirmar depois)
+  function handleTap(px, py) {
+    let best = null, bestD = 20;
+    for (const a of game.aircraft) {
+      if (a.state === 'done' || a.state === 'taxi') continue;
+      const [sx, sy] = toScreen(a.x, a.y);
+      const d = Math.hypot(sx - px, sy - py);
+      if (d < bestD) { bestD = d; best = a; }
+    }
+    if (best) { game.select(best); return; }
+
+    const sel = game.selected;
+    if (sel && sel.state !== 'done') {
+      // cabeceira de pista?
+      for (const [id, r] of Object.entries(DATA.RUNWAYS)) {
+        const [sx, sy] = toScreen(r.thr[0], r.thr[1]);
+        if (Math.hypot(sx - px, sy - py) < 16) {
+          if (sel.airborne && sel.kind === 'arr' && sel.app.phase === 'none')
+            UI.propose(sel.cs + ' ILS ' + id);
+          else if (sel.airborne && sel.app.phase !== 'none' && sel.app.rwy === id && !sel.landClr)
+            UI.propose(sel.cs + ' AP');
+          else if (['holdshort', 'lineup'].includes(sel.state))
+            UI.propose(sel.cs + ' DEC ' + id);
+          return;
+        }
+      }
+      // fixo?
+      let bf = null, bfD = 18;
+      for (const [name, [fx, fy]] of Object.entries(DATA.FIXES)) {
+        const [sx, sy] = toScreen(fx, fy);
+        const d = Math.hypot(sx - px, sy - py);
+        if (d < bfD) { bfD = d; bf = name; }
+      }
+      if (bf && sel.airborne) { UI.propose(sel.cs + ' DIR ' + bf); return; }
+      // espaço vazio: propõe vetor (proa da aeronave até o ponto tocado)
+      if (sel.airborne) {
+        const [wx, wy] = toWorld(px, py);
+        const h = Math.round(U.brg(sel.x, sel.y, wx, wy) / 5) * 5;
+        UI.propose(sel.cs + ' P ' + U.fmtHdg(h === 0 ? 360 : h));
+        return;
+      }
+    }
+    game.select(null);
   }
 
   function init(canvas, g) {
@@ -29,20 +84,18 @@ const Radar = (() => {
     resize();
     window.addEventListener('resize', resize);
 
+    // ----- mouse -----
     cv.addEventListener('wheel', e => {
       e.preventDefault();
-      const [wx, wy] = toWorld(e.offsetX, e.offsetY);
-      scale *= e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      scale = Math.max(3, Math.min(60, scale));
-      const [nx, ny] = toWorld(e.offsetX, e.offsetY);
-      cx += wx - nx; cy += wy - ny;
+      setZoom(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.offsetX, e.offsetY);
     }, { passive: false });
 
     cv.addEventListener('mousedown', e => {
       mouse.down = true; mouse.moved = false; mouse.sx = e.offsetX; mouse.sy = e.offsetY;
     });
+    cv.addEventListener('mouseleave', () => { mouse.inside = false; });
     cv.addEventListener('mousemove', e => {
-      mouse.x = e.offsetX; mouse.y = e.offsetY;
+      mouse.x = e.offsetX; mouse.y = e.offsetY; mouse.inside = true;
       if (mouse.down) {
         const dx = e.offsetX - mouse.sx, dy = e.offsetY - mouse.sy;
         if (Math.hypot(dx, dy) > 4) mouse.moved = true;
@@ -54,36 +107,76 @@ const Radar = (() => {
     });
     cv.addEventListener('mouseup', e => {
       mouse.down = false;
-      if (!mouse.moved) {
-        // clique: seleciona a aeronave mais próxima
-        let best = null, bestD = 18;
-        for (const a of game.aircraft) {
-          if (a.state === 'done' || a.state === 'taxi') continue;
-          const [sx, sy] = toScreen(a.x, a.y);
-          const d = Math.hypot(sx - e.offsetX, sy - e.offsetY);
-          if (d < bestD) { bestD = d; best = a; }
-        }
-        game.select(best);
-      }
+      if (!mouse.moved) handleTap(e.offsetX, e.offsetY);
     });
+
+    // ----- toque (celular/tablet): 1 dedo = pan/tap, 2 dedos = pinch zoom -----
+    let tPan = null, tPinch = null, tMoved = false, tStart = null;
+    const pos = t => {
+      const r = cv.getBoundingClientRect();
+      return [t.clientX - r.left, t.clientY - r.top];
+    };
+    cv.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        const [x, y] = pos(e.touches[0]);
+        tPan = { x, y }; tMoved = false; tStart = { x, y, t: performance.now() };
+        tPinch = null;
+      } else if (e.touches.length === 2) {
+        const [x1, y1] = pos(e.touches[0]), [x2, y2] = pos(e.touches[1]);
+        tPinch = { d0: Math.hypot(x2 - x1, y2 - y1), s0: scale };
+        tPan = null; tMoved = true;
+      }
+    }, { passive: false });
+    cv.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (tPinch && e.touches.length === 2) {
+        const [x1, y1] = pos(e.touches[0]), [x2, y2] = pos(e.touches[1]);
+        const d = Math.hypot(x2 - x1, y2 - y1);
+        setZoom(tPinch.s0 * (d / tPinch.d0), (x1 + x2) / 2, (y1 + y2) / 2);
+      } else if (tPan && e.touches.length === 1) {
+        const [x, y] = pos(e.touches[0]);
+        const dx = x - tPan.x, dy = y - tPan.y;
+        if (Math.hypot(x - tStart.x, y - tStart.y) > 8) tMoved = true;
+        if (tMoved) { cx -= dx / scale; cy += dy / scale; }
+        tPan = { x, y };
+      }
+    }, { passive: false });
+    cv.addEventListener('touchend', e => {
+      e.preventDefault();
+      if (e.touches.length === 0) {
+        if (tPan !== null && !tMoved && tStart && performance.now() - tStart.t < 600)
+          handleTap(tStart.x, tStart.y);
+        tPan = null; tPinch = null;
+      } else if (e.touches.length === 1 && tPinch) {
+        const [x, y] = pos(e.touches[0]);
+        tPinch = null; tPan = { x, y }; tMoved = true;
+      }
+    }, { passive: false });
   }
 
   function resize() {
     const r = cv.parentElement.getBoundingClientRect();
-    cv.width = r.width; cv.height = r.height;
-    const fit = Math.min(r.width, r.height) / (DATA.AIRPORT.range * 2.15);
+    vw = Math.max(1, r.width); vh = Math.max(1, r.height);
+    dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(vw * dpr);
+    cv.height = Math.round(vh * dpr);
+    cv.style.width = vw + 'px';
+    cv.style.height = vh + 'px';
+    const fit = Math.min(vw, vh) / (DATA.AIRPORT.range * 2.15);
     if (scale < fit * 0.8) scale = fit;
   }
 
   function fitView() {
     cx = 0; cy = 0;
-    scale = Math.min(cv.width, cv.height) / (DATA.AIRPORT.range * 2.15);
+    scale = Math.min(vw, vh) / (DATA.AIRPORT.range * 2.15);
   }
 
   // ---------------- desenho ----------------
   function draw(dt) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // nitidez em telas HiDPI
     ctx.fillStyle = C.bg;
-    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillRect(0, 0, vw, vh);
     ctx.font = '11px "Cascadia Code", Consolas, monospace';
 
     drawRings();
@@ -92,7 +185,23 @@ const Radar = (() => {
     drawRunways();
     if (game.selected) drawIntent(game.selected);
     for (const a of game.aircraft) if (a.airborne || a.state === 'takeoff' || a.state === 'rollout' || a.state === 'lineup' || a.state === 'holdshort') drawAircraft(a);
+    drawConflicts();
     drawCursorInfo();
+  }
+
+  // linha entre pares em alerta STCA, com a distância atual
+  function drawConflicts() {
+    for (const p of (game.conflictPairs || [])) {
+      const [x1, y1] = toScreen(p.a.x, p.a.y);
+      const [x2, y2] = toScreen(p.b.x, p.b.y);
+      ctx.save();
+      ctx.strokeStyle = p.loss ? C.alert : C.warn;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.setLineDash([3, 3]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.fillText(p.d.toFixed(1) + ' NM', (x1 + x2) / 2 + 5, (y1 + y2) / 2 - 5);
+      ctx.restore();
+    }
   }
 
   function drawRings() {
@@ -114,7 +223,6 @@ const Radar = (() => {
     sweep += dt * 1.4;
     const [ox, oy] = toScreen(0, 0);
     const R = DATA.AIRPORT.range * scale;
-    const g = ctx.createConicGradient ? null : null;
     ctx.save();
     ctx.globalAlpha = 0.10;
     ctx.strokeStyle = '#4be2a0'; ctx.lineWidth = 2;
@@ -129,7 +237,7 @@ const Radar = (() => {
     ctx.strokeStyle = C.fix; ctx.fillStyle = C.fixTxt;
     for (const [name, [fx, fy]] of Object.entries(DATA.FIXES)) {
       const [sx, sy] = toScreen(fx, fy);
-      if (sx < -20 || sy < -20 || sx > cv.width + 20 || sy > cv.height + 20) continue;
+      if (sx < -20 || sy < -20 || sx > vw + 20 || sy > vh + 20) continue;
       ctx.beginPath();
       ctx.moveTo(sx, sy - 4); ctx.lineTo(sx - 4, sy + 3); ctx.lineTo(sx + 4, sy + 3); ctx.closePath();
       ctx.stroke();
@@ -139,13 +247,16 @@ const Radar = (() => {
 
   function drawRunways() {
     ctx.lineWidth = Math.max(2, scale * 0.09);
-    for (const id of ['09L', '09R']) {
-      const r = DATA.RUNWAYS[id];
+    const drawnPairs = new Set();
+    for (const [id, r] of Object.entries(DATA.RUNWAYS)) {
+      const pair = DATA.RWY_PAIR[id];
+      if (drawnPairs.has(pair)) continue;
+      drawnPairs.add(pair);
       const [x1, y1] = toScreen(r.thr[0], r.thr[1]);
       const ex = r.thr[0] + Math.sin(U.d2r(r.hdg)) * r.len;
       const ey = r.thr[1] + Math.cos(U.d2r(r.hdg)) * r.len;
       const [x2, y2] = toScreen(ex, ey);
-      // linha central estendida dos dois lados (12 NM), com marcas
+      // linha central estendida dos dois lados (13 NM)
       ctx.strokeStyle = C.ctrline; ctx.lineWidth = 1; ctx.setLineDash([8, 8]);
       for (const [bx, by, hdg] of [[r.thr[0], r.thr[1], r.hdg + 180], [ex, ey, r.hdg]]) {
         const fx = bx + Math.sin(U.d2r(hdg)) * 13;
@@ -216,6 +327,15 @@ const Radar = (() => {
     });
     ctx.globalAlpha = 1;
 
+    // anel de separação (3 NM de diâmetro… raio 1,5 NM: anéis encostando = 3 NM)
+    if (a.airborne && (sel || a.stca > 0)) {
+      ctx.save();
+      ctx.strokeStyle = a.stca === 2 ? C.alert : a.stca === 1 ? C.warn : C.sel;
+      ctx.globalAlpha = 0.35; ctx.setLineDash([4, 5]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(sx, sy, 1.5 * scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
     // símbolo
     ctx.strokeStyle = sel ? C.sel : col;
     ctx.lineWidth = sel ? 2 : 1.4;
@@ -259,12 +379,30 @@ const Radar = (() => {
     lines.forEach((t, i) => t && ctx.fillText(t, bx, by + i * 12));
   }
 
+  // leitura do cursor (canto inferior direito, longe do painel de seleção)
+  // e régua aeronave selecionada → cursor
   function drawCursorInfo() {
+    if (!mouse.inside) return;
     const [wx, wy] = toWorld(mouse.x, mouse.y);
-    const d = U.dist(0, 0, wx, wy);
-    const b = U.brg(0, 0, wx, wy);
+    ctx.textAlign = 'right';
     ctx.fillStyle = C.ringTxt;
-    ctx.fillText(`${U.fmtHdg(b)}° / ${d.toFixed(1)} NM`, 10, cv.height - 10);
+    ctx.fillText(`APT ${U.fmtHdg(U.brg(0, 0, wx, wy))}° / ${U.dist(0, 0, wx, wy).toFixed(1)} NM`, vw - 12, vh - 76);
+
+    const s = game.selected;
+    if (s && s.airborne) {
+      const [ax, ay] = toScreen(s.x, s.y);
+      const brg = U.brg(s.x, s.y, wx, wy);
+      const dst = U.dist(s.x, s.y, wx, wy);
+      ctx.save();
+      ctx.strokeStyle = C.sel; ctx.globalAlpha = 0.65; ctx.setLineDash([5, 5]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = C.sel;
+      ctx.fillText(`${s.cs} ${U.fmtHdg(brg)}° / ${dst.toFixed(1)} NM`, vw - 12, vh - 62);
+      ctx.textAlign = 'left';
+      ctx.fillText(`${U.fmtHdg(brg)}°/${dst.toFixed(1)}`, mouse.x + 14, mouse.y - 10);
+    }
+    ctx.textAlign = 'left';
   }
 
   return { init, draw, fitView };

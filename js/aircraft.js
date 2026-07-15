@@ -36,6 +36,9 @@ class Aircraft {
       landClr: false,
       rwy: null,                 // pista em uso (decolagem/pouso)
       goingAround: false,
+      sidEngaged: opts.kind === 'arr', // saídas engatam a SID a 900 ft
+      depHdg: null,                    // proa designada antes da decolagem
+      pending: [],                     // instruções condicionais (APOS fixo/NM)
       trail: [], trailT: 0,
       stca: 0,                   // 0 ok, 1 previsto, 2 perda
       timer: opts.timer ?? 0,    // uso genérico (taxi, rollout...)
@@ -83,8 +86,14 @@ class Aircraft {
 
   // ---- comandos (retornam mensagem de readback ou {err}) ----
   cmdAlt(alt) {
-    if (this.onGround) return { err: 'ainda no solo' };
     if (alt < 2000 || alt > 24000) return { err: 'altitude fora dos limites da TMA (2.000–FL240)' };
+    // autorização de subida dada ainda no solo (aplicada após a decolagem)
+    if (this.onGround) {
+      if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
+      if (alt < 3000) return { err: 'subida inicial mínima de 3.000 pés' };
+      this.clrAlt = alt;
+      return { rb: 'Após a decolagem, subindo para ' + U.fmtAlt(alt) };
+    }
     const dir = alt < this.alt - 100 ? 'Descendo para ' : alt > this.alt + 100 ? 'Subindo para ' : 'Mantendo ';
     this.clrAlt = alt; this.via = false;
     return { rb: dir + U.fmtAlt(alt) };
@@ -99,8 +108,14 @@ class Aircraft {
     return { rb: dir + spd + ' nós' };
   }
   cmdHdg(hdg, turn) {
-    if (!this.airborne) return { err: 'ainda no solo' };
+    // proa designada ainda no solo: substitui a SID após a decolagem (900 ft)
+    if (!this.airborne) {
+      if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
+      this.depHdg = U.norm360(hdg);
+      return { rb: 'Após a decolagem, proa ' + U.fmtHdg(hdg) };
+    }
     this.cancelApproach();
+    this.sidEngaged = true;
     this.nav = { mode: 'hdg', hdg: U.norm360(hdg), turn: turn || null };
     const t = turn === 'L' ? 'Curva à esquerda, proa ' : turn === 'R' ? 'Curva à direita, proa ' : 'Proa ';
     return { rb: t + U.fmtHdg(hdg) };
@@ -109,6 +124,7 @@ class Aircraft {
     if (!this.airborne) return { err: 'ainda no solo' };
     if (!U.fix(fixName)) return { err: 'fixo desconhecido' };
     this.cancelApproach();
+    this.sidEngaged = true;
     // se o fixo está na rota atual, pula para ele mantendo o resto
     if (this.nav.mode === 'route') {
       const i = this.nav.route.indexOf(fixName, this.nav.idx);
@@ -171,6 +187,7 @@ class Aircraft {
     if (!this.airborne) return { err: 'ainda no solo' };
     if (!U.fix(fixName)) return { err: 'fixo desconhecido' };
     this.cancelApproach();
+    this.sidEngaged = true;
     this.nav = { mode: 'hold', fix: fixName, resume: this.nav.mode === 'route' ? { route: this.nav.route, idx: this.nav.idx } : null };
     return { rb: 'Espera sobre ' + fixName };
   }
@@ -182,9 +199,92 @@ class Aircraft {
   cmdSid(name) {
     const sid = DATA.SIDS[name];
     if (!sid) return { err: 'SID desconhecida' };
-    if (!this.onGround) return { err: 'já em voo, solicite direto a um fixo' };
+    if (this.kind !== 'dep') return { err: 'somos uma chegada, não temos SID' };
     this.sid = name;
-    return { rb: 'SID ' + name };
+    if (this.onGround) return { rb: 'SID ' + name };
+    // em voo: reingressa na SID pelo fixo mais próximo
+    const join = this.nearestOf(sid.route);
+    this.cancelApproach();
+    this.sidEngaged = true;
+    this.nav = { mode: 'route', route: sid.route.slice(sid.route.indexOf(join)), idx: 0 };
+    return { rb: 'SID ' + name + ', direto ' + join };
+  }
+  cmdStar(name) {
+    const star = DATA.STARS[name];
+    if (!star) return { err: 'STAR desconhecida' };
+    if (this.kind !== 'arr') return { err: 'somos uma saída, não temos STAR' };
+    if (!this.airborne) return { err: 'ainda no solo' };
+    const fixes = star.route.map(r => r.fix);
+    const join = this.nearestOf(fixes);
+    this.cancelApproach();
+    this.star = name;
+    this.via = false;
+    this.nav = { mode: 'route', route: fixes.slice(fixes.indexOf(join)), idx: 0 };
+    return { rb: 'Chegada ' + name + ', direto ' + join };
+  }
+  // transferência para o Centro (apenas saídas, perto do fim da SID e alto)
+  cmdHandoff(game) {
+    if (this.kind === 'arr') return { err: 'somos uma chegada — seguimos com você até o pouso' };
+    if (!this.airborne) return { err: 'ainda no solo' };
+    const exitFix = DATA.SIDS[this.sid] && DATA.SIDS[this.sid].exit;
+    const d = U.dist(0, 0, this.x, this.y);
+    const nearExit = (exitFix && this.fixDist(exitFix) < 12) || d > DATA.AIRPORT.range * 0.6;
+    if (!nearExit) return { err: 'ainda não completamos a saída — cedo demais para o Centro', early: true };
+    if (this.alt < 9000) return { err: 'ainda abaixo de 9.000 pés — cedo demais para o Centro', early: true };
+    this.handedOff = true;
+    if (game) game.completeHandoff(this, true);
+    return { rb: 'Com o Centro, obrigado, até logo' };
+  }
+  // instrução condicional: executa após passar um fixo e/ou após N milhas
+  addPending(cond) {
+    if (this.pending.length >= 3) return { err: 'já temos três instruções condicionais pendentes' };
+    const p = {
+      fix: cond.fix || null,
+      dist: cond.dist ?? null,
+      tokens: cond.tokens,
+      armed: !cond.fix,          // com fixo: arma ao cruzá-lo
+      origin: null,              // ponto de referência para medir a distância
+    };
+    if (!p.fix) {
+      // sem fixo: mede da posição atual (ou da corrida de decolagem, se no solo)
+      if (this.airborne) p.origin = [this.x, this.y];
+      // no solo: origem definida quando a rolagem começar (checkPending)
+    }
+    p.label = 'após ' + (p.fix ? p.fix + ' ' : '') + (p.dist ? p.dist + ' NM ' : '') + '→ ' + p.tokens.join(' ');
+    this.pending.push(p);
+    const when = (p.fix ? p.fix : '') + (p.fix && p.dist ? ', ' : '') + (p.dist ? p.dist + ' milhas' : '');
+    return { rb: 'Após ' + when + ', ' + p.tokens.join(' ') };
+  }
+
+  checkPending(game) {
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const p = this.pending[i];
+      if (p.fix) {
+        if (!p.armed) {
+          if (this.fixDist(p.fix) < 1.4) { p.armed = true; p.origin = U.fix(p.fix).slice(); }
+          continue;
+        }
+        const d = U.dist(this.x, this.y, p.origin[0], p.origin[1]);
+        if (d >= (p.dist ?? 0.1)) { this.pending.splice(i, 1); game.execPending(this, p); }
+      } else {
+        if (!p.origin) {
+          if ((this.state === 'takeoff' && this.spd > 30) || this.airborne) p.origin = [this.x, this.y];
+          continue;
+        }
+        const d = U.dist(this.x, this.y, p.origin[0], p.origin[1]);
+        if (d >= p.dist) { this.pending.splice(i, 1); game.execPending(this, p); }
+      }
+    }
+  }
+
+  // fixo da lista mais próximo da posição atual
+  nearestOf(fixNames) {
+    let best = fixNames[0], bd = Infinity;
+    for (const f of fixNames) {
+      const d = this.fixDist(f);
+      if (d < bd) { bd = d; best = f; }
+    }
+    return best;
   }
 
   cancelApproach() {
@@ -241,6 +341,7 @@ class Aircraft {
     if (this.state === 'holdshort' || this.state === 'lineup') return;
 
     if (this.state === 'takeoff') {
+      this.checkPending(game);
       if (this.timer > 0) { this.timer -= dt; return; } // terminando de alinhar
       this.spd = Math.min(this.spd + this.perf.accel * 2.2 * dt, this.perf.vr + 15);
       this.moveStraight(dt);
@@ -265,6 +366,16 @@ class Aircraft {
     }
 
     // ------- em voo -------
+    this.checkPending(game);
+    // saída: aos 900 ft engata a SID (ou a proa dada antes da decolagem)
+    if (this.kind === 'dep' && !this.sidEngaged && this.alt > 900) {
+      this.sidEngaged = true;
+      if (this.depHdg != null) {
+        this.nav = { mode: 'hdg', hdg: this.depHdg, turn: null };
+      } else if (this.sid && DATA.SIDS[this.sid]) {
+        this.nav = { mode: 'route', route: DATA.SIDS[this.sid].route.slice(), idx: 0 };
+      }
+    }
     this.updateLateral(dt, game);
     this.updateVertical(dt);
     this.updateSpeed(dt);
@@ -309,7 +420,7 @@ class Aircraft {
         // rastrear localizador: correção proporcional ao desvio
         const corr = Math.max(-30, Math.min(30, -cross * 40));
         this.turnToward(r.hdg + corr, dt);
-        if (this.app.phase === 'loc' && !this.estabAnnounced && Math.abs(cross) < 0.2) {
+        if (!this.estabAnnounced && Math.abs(cross) < 0.2) {
           this.estabAnnounced = true;
           game.radioPilot(this, `estabelecido no localizador ILS ${this.app.rwy}`);
         }

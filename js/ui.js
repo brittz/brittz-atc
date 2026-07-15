@@ -156,9 +156,14 @@ const UI = (() => {
     $('selCs').textContent = a.cs + (a.emergency ? ' ⚠ EMERGÊNCIA' : '');
     $('selInfo').textContent =
       `${a.type}/${a.perf.wtc} · ${a.kind === 'arr' ? 'Chegada ' + (a.star || '') : 'Saída ' + (a.sid || '') + (a.dest ? ' → ' + a.dest : '')}`;
+    let nextFix = '';
+    if (a.airborne && a.nav.mode === 'route' && a.nav.route[a.nav.idx])
+      nextFix = ` · →${a.nav.route[a.nav.idx]} ${a.fixDist(a.nav.route[a.nav.idx]).toFixed(1)} NM`;
     $('selData').textContent = a.onGround
       ? `No solo — ${stripStatus(a)}`
-      : `ALT ${Math.round(a.alt)} ft (autz ${Math.round(a.clrAlt)}) · VEL ${Math.round(a.spd)} kt · PROA ${U.fmtHdg(a.hdg)} · ${stripStatus(a)}`;
+      : `ALT ${Math.round(a.alt)} ft (autz ${Math.round(a.clrAlt)}) · VEL ${Math.round(a.spd)} kt · PROA ${U.fmtHdg(a.hdg)} · ${stripStatus(a)}${nextFix}`;
+    $('selPend').innerHTML = (a.pending || []).map(p => '⏳ ' + p.label).join('<br>');
+    $('selPend').style.display = (a.pending && a.pending.length) ? '' : 'none';
 
     // botões contextuais
     const q = $('quickBtns');
@@ -185,6 +190,8 @@ const UI = (() => {
           btn('Autorizar pouso', 'AP', 'good');
           btn('Arremeter', 'ARR', 'bad');
         } else btn('Arremeter', 'ARR', 'bad');
+      } else {
+        btn('Transferir ao Centro', 'HO', 'good');
       }
       for (const alt of [3000, 4000, 5000, 6000, 8000, 10000, 12000])
         if (Math.abs(alt - a.clrAlt) > 100) btn((alt < a.alt ? '↓' : '↑') + (alt >= 10000 ? 'FL' + alt / 100 : alt / 1000 + 'k'), 'A ' + alt, 'alt');
@@ -201,16 +208,18 @@ const UI = (() => {
     const mk = (title, items, kind) => {
       const h = document.createElement('div'); h.className = 'chartGroup'; h.textContent = title; list.appendChild(h);
       for (const [id, p] of items) {
+        const active = !game.started || p.cfg === game.cfg;
         const b = document.createElement('button');
-        b.textContent = id + (p.cfg === game.cfg ? '' : ' (inativa)');
-        b.className = p.cfg === game.cfg ? '' : 'dim';
+        b.textContent = id + (active ? '' : ' (inativa)');
+        b.className = active ? '' : 'dim';
         b.onclick = () => { drawChart(id, p, kind); list.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); };
         list.appendChild(b);
       }
     };
     mk('CHEGADAS (STAR)', Object.entries(DATA.STARS), 'star');
     mk('SAÍDAS (SID)', Object.entries(DATA.SIDS), 'sid');
-    const first = Object.entries(DATA.STARS).find(([, p]) => p.cfg === game.cfg);
+    const first = Object.entries(DATA.STARS).find(([, p]) => p.cfg === game.cfg)
+      || Object.entries(DATA.STARS)[0];
     if (first) { drawChart(first[0], first[1], 'star'); list.querySelectorAll('button')[0].classList.add('on'); }
   }
 
@@ -241,10 +250,18 @@ const UI = (() => {
       : 'Saída padrão · Proa de pista até 900 ft AGL, então navega pelos fixos · Subida inicial 5.000 ft', 14, 38);
     ctx.strokeStyle = '#1a1a2e'; ctx.strokeRect(6, 6, w - 12, h - 12);
 
-    // aeroporto
+    // aeroporto: pistas conforme o JSON carregado
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 3;
+    const drawnPairs = new Set();
+    for (const [rid, rw] of Object.entries(DATA.RUNWAYS)) {
+      const pair = DATA.RWY_PAIR[rid];
+      if (drawnPairs.has(pair)) continue;
+      drawnPairs.add(pair);
+      const ex = rw.thr[0] + Math.sin(U.d2r(rw.hdg)) * rw.len;
+      const ey = rw.thr[1] + Math.cos(U.d2r(rw.hdg)) * rw.len;
+      ctx.beginPath(); ctx.moveTo(px(rw.thr[0]), py(rw.thr[1])); ctx.lineTo(px(ex), py(ey)); ctx.stroke();
+    }
     ctx.fillStyle = '#333';
-    ctx.fillRect(px(-0.95), py(0.4) - 1.5, 1.9 * sc, 3);
-    ctx.fillRect(px(-0.95), py(-0.4) - 1.5, 1.9 * sc, 3);
     ctx.font = 'bold 10px Georgia, serif';
     ctx.fillText(DATA.AIRPORT.icao, px(0) - 14, py(0) + 18);
 
@@ -282,8 +299,8 @@ const UI = (() => {
 
     // rodapé
     ctx.fillStyle = '#1a1a2e'; ctx.font = '10px Georgia, serif';
-    const rwys = proc.cfg === '09' ? 'RWY 09L/09R' : 'RWY 27R/27L';
-    ctx.fillText(`Config ${rwys} · Uso exclusivo em simulação — ATC Costa Verde`, 14, h - 14);
+    const cfgLab = (DATA.CONFIGS[proc.cfg] && DATA.CONFIGS[proc.cfg].label) || 'Config ' + proc.cfg;
+    ctx.fillText(`${cfgLab} · Uso exclusivo em simulação — ${DATA.AIRPORT.icao}`, 14, h - 14);
   }
 
   // ---------------- topo / status ----------------
@@ -291,6 +308,7 @@ const UI = (() => {
     $('score').textContent = game.score;
     $('clockEl').textContent = game.clock() + 'Z';
     $('windEl').textContent = game.windStr();
+    $('atisLetter').textContent = game.atisLetter();
     $('rankEl').textContent = game.rank();
     $('statLanded').textContent = game.stats.landed;
     $('statDeparted').textContent = game.stats.departed;
@@ -314,22 +332,29 @@ const UI = (() => {
     const input = $('cmdInput');
     const history = [];
     let hIdx = -1;
+    function transmit() {
+      if (!input.value.trim()) return;
+      game.runCommand(input.value);
+      history.unshift(input.value); if (history.length > 30) history.pop();
+      hIdx = -1;
+      input.value = '';
+      $('btnSend').classList.remove('pending');
+    }
     input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && input.value.trim()) {
-        game.runCommand(input.value);
-        history.unshift(input.value); if (history.length > 30) history.pop();
-        hIdx = -1;
-        input.value = '';
-      } else if (e.key === 'ArrowUp') { if (hIdx < history.length - 1) input.value = history[++hIdx]; e.preventDefault(); }
+      if (e.key === 'Enter') transmit();
+      else if (e.key === 'ArrowUp') { if (hIdx < history.length - 1) input.value = history[++hIdx]; e.preventDefault(); }
       else if (e.key === 'ArrowDown') { if (hIdx > 0) input.value = history[--hIdx]; else { hIdx = -1; input.value = ''; } e.preventDefault(); }
       else if (e.key === 'Escape') { input.value = ''; game.select(null); }
     });
+    $('btnSend').onclick = transmit;
     // seleção preenche o callsign
     document.addEventListener('keydown', e => {
       if (e.target === input) return;
+      if (e.key === 'Escape') { game.select(null); return; }
       if (e.key === 'p' || e.key === 'P') game.togglePause();
       if (/^[a-zA-Z0-9]$/.test(e.key)) { input.focus(); }
     });
+    $('selClose').onclick = () => game.select(null);
 
     $('btnCharts').onclick = openCharts;
     $('btnHelp').onclick = () => $('helpModal').classList.remove('hidden');
@@ -344,7 +369,48 @@ const UI = (() => {
     $('btnSound').onclick = () => { game.settings.sound = !game.settings.sound; $('btnSound').classList.toggle('off', !game.settings.sound); if (!game.settings.sound) setAlarm(false); };
     $('btnTts').onclick = () => { game.settings.tts = !game.settings.tts; $('btnTts').classList.toggle('off', !game.settings.tts); if (!game.settings.tts) speechSynthesis.cancel(); };
     $('btnCenter').onclick = () => Radar.fitView();
+
+    // sidebar recolhível (essencial no celular)
+    const applySidebar = show => {
+      $('sidebar').classList.toggle('hidden', !show);
+      $('btnSidebar').classList.toggle('off', !show);
+      window.dispatchEvent(new Event('resize'));
+    };
+    let sbOpen = window.innerWidth > 980; // começa fechada em telas pequenas
+    applySidebar(sbOpen);
+    $('btnSidebar').onclick = () => { sbOpen = !sbOpen; applySidebar(sbOpen); };
+
+    // ATIS / METAR / pistas em uso
+    $('atisBtn').onclick = () => { refreshAtisModal(); $('atisModal').classList.remove('hidden'); };
   }
 
-  return { init, logATC, logPilot, logSys, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts };
+  function refreshAtisModal() {
+    $('atisLetterBig').textContent = game.atisLetter();
+    $('metarText').textContent = game.metar();
+    const tw = game.tailwind();
+    $('atisWarn').classList.toggle('hidden', tw < 8);
+    if (tw >= 8) $('atisWarn').textContent =
+      `⚠ Componente de cauda de ${Math.round(tw)} kt na pista ${DATA.CONFIGS[game.cfg].arrRwy} — considere trocar a configuração.`;
+    const box = $('cfgSwitch');
+    box.innerHTML = '';
+    for (const [k, c] of Object.entries(DATA.CONFIGS)) {
+      const b = document.createElement('button');
+      const twK = game.tailwind(k);
+      b.textContent = (k === game.cfg ? '● ' : '○ ') + c.label +
+        `  (cauda ${twK > 0 ? Math.round(twK) : 0} kt)`;
+      b.classList.toggle('on', k === game.cfg);
+      b.onclick = () => { game.setConfig(k); refreshAtisModal(); };
+      box.appendChild(b);
+    }
+  }
+
+  // preenche a barra de comando com uma instrução pendente de confirmação
+  function propose(text) {
+    const input = $('cmdInput');
+    input.value = text;
+    $('btnSend').classList.add('pending');
+    if (!('ontouchstart' in window)) input.focus();
+  }
+
+  return { init, logATC, logPilot, logSys, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, propose, refreshAtisModal };
 })();

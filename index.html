@@ -11,7 +11,7 @@
 <div id="topbar">
   <div class="brand">🛫 <b>ATC COSTA VERDE</b> <span id="cfgLabel"></span></div>
   <div class="stat">⏱ <span id="clockEl">13:20:00</span></div>
-  <div class="stat">🌬 <span id="windEl">—</span></div>
+  <button id="atisBtn" title="METAR / ATIS / pistas em uso">🌬 <span id="windEl">—</span> · ATIS <span id="atisLetter">A</span></button>
   <div class="stat score">★ <span id="score">0</span> <small id="rankEl">Estagiário</small></div>
   <div class="stat small">Pousos <b id="statLanded">0</b> · Saídas <b id="statDeparted">0</b> · Arrem. <b id="statGA">0</b> · Perdas sep. <b id="statSep">0</b></div>
   <div class="spacer"></div>
@@ -24,6 +24,8 @@
   <button id="btnTts" title="Voz dos pilotos">🗣</button>
   <button id="btnCharts">📑 Cartas</button>
   <button id="btnHelp">❔ Ajuda</button>
+  <button id="btnRestart" title="Reiniciar fase / voltar ao menu">↺ Menu</button>
+  <button id="btnSidebar" title="Mostrar/ocultar strips e comunicações">📋 Strips</button>
 </div>
 
 <div id="main">
@@ -32,11 +34,19 @@
     <div id="pausedTag" class="hidden">SIMULAÇÃO PAUSADA</div>
     <div id="banner"></div>
     <div id="selPanel" class="hidden">
+      <button id="selClose" title="Desselecionar (Esc)">✕</button>
       <div id="selCs">—</div>
       <div id="selInfo"></div>
       <div id="selData"></div>
+      <div id="selPend"></div>
       <div id="quickBtns"></div>
     </div>
+    <div id="cmdBar">
+      <input id="cmdInput" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters"
+        placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R">
+      <button id="btnSend" title="Transmitir (Enter)">📡</button>
+    </div>
+    <div id="cmdHint">A alt · V vel · P proa/fixo · DIR fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · APOS fixo/NM cmd · ESPERA · HO · ARR</div>
   </div>
 
   <div id="sidebar">
@@ -46,11 +56,6 @@
     <div id="stripsDep" class="stripBox"></div>
     <div class="stripHead">COMUNICAÇÕES 121.5 · APP SBCV 119.1</div>
     <div id="log"></div>
-    <div id="cmdRow">
-      <input id="cmdInput" type="text" autocomplete="off" spellcheck="false"
-        placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R  (Enter transmite)">
-    </div>
-    <div id="cmdHint">A alt · V vel · P proa · DIR fixo · VIA · ILS pista · AP pouso · ALINHAR · DEC · ESPERA fixo · ARR</div>
   </div>
 </div>
 
@@ -64,11 +69,12 @@
        transferência ao Centro. Mantenha <b>3 NM / 1.000 ft</b> de separação — o STCA avisa, mas a
        fita não perdoa.</p>
     <div class="pickRow">
+      <span>Aeroporto/Fase:</span>
+      <span id="airportPick"><em class="loading">carregando…</em></span>
+    </div>
+    <div class="pickRow">
       <span>Configuração:</span>
-      <span id="cfgPick">
-        <button data-cfg="09" class="on">Fluxo 09 (leste)</button>
-        <button data-cfg="27">Fluxo 27 (oeste)</button>
-      </span>
+      <span id="cfgPick"></span>
     </div>
     <div class="pickRow">
       <span>Tráfego:</span>
@@ -84,6 +90,33 @@
     </div>
     <p class="tiny">Dica: clique numa aeronave (ou na strip) e use os botões rápidos, ou digite a fraseologia.
        Comece autorizando <b>VIA</b> (descer via STAR) e depois <b>ILS</b> + <b>AP</b>.</p>
+  </div>
+</div>
+
+<!-- ===== ATIS / METAR / pistas em uso ===== -->
+<div id="atisModal" class="modal hidden">
+  <div class="modalBox atis">
+    <button class="close">✕</button>
+    <h2>ATIS <span id="atisLetterBig">A</span> — SBCV</h2>
+    <pre id="metarText">—</pre>
+    <div id="atisWarn" class="hidden">⚠ Vento desfavorável para a configuração atual!</div>
+    <h3>Pistas em uso</h3>
+    <div id="cfgSwitch"></div>
+    <p class="tiny">O vento muda com o tempo. Troque a configuração quando a componente de cauda
+       ficar alta — as próximas chegadas e saídas já usarão as novas cartas; quem está no ar
+       mantém a autorização atual.</p>
+  </div>
+</div>
+
+<!-- ===== confirmação de reinício ===== -->
+<div id="restartModal" class="modal hidden">
+  <div class="modalBox confirm">
+    <h2>Encerrar o turno?</h2>
+    <p>A partida atual será descartada e você voltará ao menu inicial<br>(pontuação e estatísticas serão zeradas).</p>
+    <div class="startBtns">
+      <button id="btnRestartYes" class="bad">↺ Sim, reiniciar</button>
+      <button id="btnRestartNo">Continuar controlando</button>
+    </div>
   </div>
 </div>
 
@@ -107,6 +140,9 @@
       <tr><td><code>A 6000</code> / <code>A FL120</code></td><td>Suba/desça para altitude ou nível</td></tr>
       <tr><td><code>V 220</code> / <code>V LIVRE</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
       <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
+      <tr><td><code>P TOLDO</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele)</td></tr>
+      <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita só fixo ou só distância; o resto da linha é a instrução)</td></tr>
+      <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>)</td></tr>
       <tr><td><code>DIR GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela)</td></tr>
       <tr><td><code>VIA</code></td><td>Descer via STAR — cumpre as restrições de altitude/velocidade da carta</td></tr>
       <tr><td><code>ILS 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
@@ -115,11 +151,21 @@
       <tr><td><code>DEC 09R</code></td><td>Autoriza decolagem</td></tr>
       <tr><td><code>ESPERA NIDOL</code></td><td>Órbita de espera sobre o fixo</td></tr>
       <tr><td><code>ARR</code></td><td>Instrução de arremetida / cancela a aproximação</td></tr>
-      <tr><td><code>SID CACTO1</code></td><td>Troca a SID (apenas no solo)</td></tr>
+      <tr><td><code>SID CACTO1</code></td><td>Designa/troca a SID (no solo ou reingressa em voo)</td></tr>
+      <tr><td><code>STAR PEDRA1</code></td><td>Designa/troca a STAR — a aeronave reingressa pelo fixo mais próximo</td></tr>
+      <tr><td><code>HO</code> / <code>TRANSFERIR</code></td><td>Transfere a saída ao Centro (só perto do fixo de saída e ≥ 9.000 ft — pontua mais que a transferência automática)</td></tr>
     </table>
+    <p>💡 <b>Antes da decolagem</b> você pode dar <code>A FL150</code> e <code>P 120</code>: a aeronave
+       cumpre após decolar (proa substitui a SID aos 900 ft). Com uma aeronave <b>selecionada</b>,
+       uma régua segue o mouse mostrando proa/distância a partir dela; clique/toque num
+       <b>fixo</b> (monta <code>DIR</code>), numa <b>cabeceira</b> (monta <code>ILS</code>/<code>AP</code>/<code>DEC</code>)
+       ou em <b>espaço vazio</b> (monta <code>P proa</code>) e confirme no botão 📡 ou Enter.
+       Esc ou ✕ desselecionam. Pinça = zoom, arrastar = mover.</p>
+    <p>🌬 O vento muda com o tempo — acompanhe pelo botão <b>ATIS</b> no topo. Com vento de cauda
+       forte, troque as pistas em uso por lá.</p>
     <h3>Como pontuar</h3>
     <ul>
-      <li><b>+100</b> pouso · <b>+100</b> saída transferida acima de 9.500 ft (+40 se abaixo) · <b>+150</b> bônus por emergência bem atendida</li>
+      <li><b>+100</b> pouso · <b>+100</b> transferência manual (<code>HO</code>) no momento certo · <b>+60/+30</b> transferência automática · <b>+150</b> bônus por emergência bem atendida</li>
       <li><b>−200</b> perda de separação (3 NM / 1.000 ft) · <b>−100</b> arremetida · <b>−150</b> chegada esquecida fora da TMA</li>
     </ul>
     <h3>Fluxo típico de uma chegada</h3>

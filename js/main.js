@@ -19,6 +19,7 @@ const game = {
   nextArr: 10, nextDep: 20,
   pendingRadio: [],    // mensagens de piloto com atraso
   sepPairs: new Set(), // pares já penalizados nesta perda
+  conflictPairs: [],   // pares em alerta (para desenhar no radar)
 
   // ---------- utilidades ----------
   clock() {
@@ -28,8 +29,122 @@ const game = {
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   },
   windStr() {
+    const w = this.weather || (DATA.CONFIGS[this.cfg] && DATA.CONFIGS[this.cfg].wind);
+    if (!w) return '—';
+    return `${U.fmtHdg(w.dir)}°/${Math.round(w.spd)}kt`;
+  },
+
+  // ---------- meteorologia dinâmica ----------
+  weather: null, atisIdx: 0, wxMin: 0, metarT: 0, windEvent: null,
+
+  initWeather() {
     const w = DATA.CONFIGS[this.cfg].wind;
-    return `${U.fmtHdg(w.dir)}°/${w.spd}kt`;
+    this.weather = {
+      dir: U.norm360(w.dir + U.rnd(-10, 10)),
+      spd: Math.max(3, w.spd + U.rnd(-2, 2)),
+      qnh: Math.round(U.rnd(1010, 1022)),
+      temp: Math.round(U.rnd(21, 29)),
+    };
+    this.atisIdx = 0; this.wxMin = 0; this.metarT = 0;
+    this.windEvent = { at: this.time + U.rnd(1100, 2200), target: null, spdT: null };
+  },
+
+  updateWeather(h) {
+    if (!this.weather) return;
+    this.wxMin += h;
+    if (this.wxMin >= 60) { // a cada minuto simulado
+      this.wxMin = 0;
+      const w = this.weather;
+      if (this.windEvent && this.windEvent.target !== null) {
+        // frente passando: o vento gira até a direção-alvo
+        const diff = U.adiff(w.dir, this.windEvent.target);
+        if (Math.abs(diff) <= 12) {
+          w.dir = this.windEvent.target;
+          this.windEvent = { at: this.time + U.rnd(1400, 2600), target: null, spdT: null };
+          this.publishAtis('o vento estabilizou');
+        } else {
+          w.dir = U.norm360(w.dir + Math.sign(diff) * 12);
+        }
+        if (this.windEvent && this.windEvent.spdT !== null)
+          w.spd += Math.sign(this.windEvent.spdT - w.spd) * Math.min(1.5, Math.abs(this.windEvent.spdT - w.spd));
+      } else {
+        // deriva normal
+        w.dir = U.norm360(w.dir + U.rnd(-5, 5));
+        w.spd = Math.max(2, Math.min(22, w.spd + U.rnd(-0.8, 0.8)));
+        if (this.windEvent && this.time >= this.windEvent.at) {
+          this.windEvent.target = U.norm360(w.dir + U.pick([150, 180, 200, -150, -170]));
+          this.windEvent.spdT = U.rnd(8, 16);
+          UI.logSys('Meteorologia: o vento está mudando de direção…', '');
+        }
+      }
+    }
+    // novo METAR/ATIS a cada 30 min
+    this.metarT += h;
+    if (this.metarT >= 1800) { this.metarT = 0; this.publishAtis(); }
+  },
+
+  publishAtis(extra) {
+    this.atisIdx++;
+    UI.logSys(`Informação ATIS ${this.atisLetter()} disponível${extra ? ' — ' + extra : ''}: ${this.metar()}`);
+    const tw = this.tailwind();
+    if (tw >= 8) {
+      UI.flashBanner(`Vento de cauda de ${Math.round(tw)} kt na pista ${DATA.CONFIGS[this.cfg].arrRwy} — avalie trocar a configuração (botão ATIS)`, 'bad');
+      UI.chime();
+    }
+  },
+
+  atisLetter() {
+    return String.fromCharCode(65 + (this.atisIdx % 26));
+  },
+
+  metar() {
+    const w = this.weather;
+    if (!w) return '—';
+    const hhmm = this.clock().slice(0, 5).replace(':', '');
+    let ddd = Math.round(w.dir / 10) * 10;
+    if (ddd === 0) ddd = 360;
+    const dew = w.temp - 7;
+    return `METAR ${DATA.AIRPORT.icao} 14${hhmm}Z ${String(ddd).padStart(3, '0')}${String(Math.round(w.spd)).padStart(2, '0')}KT 9999 FEW025 SCT080 ${w.temp}/${dew} Q${w.qnh}`;
+  },
+
+  // componente de vento de cauda na pista de pouso da configuração (kt, >0 = cauda)
+  tailwind(cfgKey) {
+    const cfg = DATA.CONFIGS[cfgKey || this.cfg];
+    if (!cfg || !this.weather) return 0;
+    const r = DATA.RUNWAYS[cfg.arrRwy];
+    return -this.weather.spd * Math.cos(U.d2r(this.weather.dir - r.hdg));
+  },
+
+  // troca de pistas em uso durante o jogo
+  setConfig(k) {
+    if (k === this.cfg || !DATA.CONFIGS[k]) return;
+    this.cfg = k;
+    const c = DATA.CONFIGS[k];
+    // saídas ainda taxiando são re-alocadas para a nova configuração
+    for (const a of this.aircraft) {
+      if (a.kind === 'dep' && a.state === 'taxi') {
+        a.rwy = c.depRwy;
+        const oldExit = DATA.SIDS[a.sid] && DATA.SIDS[a.sid].exit;
+        const nova = Object.entries(DATA.SIDS).find(([, s]) => s.cfg === k && s.exit === oldExit);
+        if (nova) a.sid = nova[0];
+      }
+    }
+    document.getElementById('cfgLabel').textContent =
+      DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + c.label;
+    this.publishAtis('nova configuração em vigor');
+    UI.logSys('PISTAS EM USO: ' + c.label);
+    UI.flashBanner('Pistas em uso: pousos ' + c.arrRwy + ' · decolagens ' + c.depRwy);
+  },
+
+  // conclusão de transferência ao Centro (manual = via comando HO)
+  completeHandoff(ac, manual) {
+    if (ac.state === 'done') return;
+    ac.state = 'done';
+    ac.handedOff = true;
+    this.stats.departed++;
+    if (manual) this.addScore(100, ac.cs + ' transferido ao Centro no momento certo');
+    else if (ac.alt >= 9500) this.addScore(60, ac.cs + ' transferido automaticamente (use HO e pontue mais)');
+    else this.addScore(30, ac.cs + ' transferido baixo e automaticamente');
   },
   rank() {
     const s = this.score;
@@ -150,6 +265,16 @@ const game = {
     UI.chime();
   },
 
+  // executa uma instrução condicional que atingiu a condição (APOS)
+  execPending(ac, p) {
+    const { results } = Commands.run(ac, p.tokens, this);
+    const rbs = results.filter(r => r && r.rb).map(r => r.rb);
+    const errs = results.filter(r => r && r.err).map(r => r.err);
+    if (rbs.length) this.radioPilot(ac, rbs.join(', '), 0.3);
+    if (errs.length) this.radioPilot(ac, 'Não foi possível cumprir a condicional: ' + errs.join('; '), 0.3);
+    UI.refreshSelPanel();
+  },
+
   // ---------- comandos ----------
   runCommand(line) {
     const res = Commands.parse(line, this);
@@ -165,6 +290,8 @@ const game = {
     }
     if (rbs.length) this.radioPilot(ac, rbs.join(', '));
     if (errs.length) this.radioPilot(ac, 'Negativo, ' + errs.join('; '));
+    if (results.some(r => r && r.early))
+      UI.flashBanner('Cedo demais para transferir ' + ac.cs + ' — complete a SID e a subida (≥ 9.000 ft)', 'bad');
     this.select(this.selected === ac ? ac : this.selected); // refresh
     UI.refreshSelPanel();
   },
@@ -173,6 +300,7 @@ const game = {
   checkConflicts() {
     const air = this.aircraft.filter(a => a.airborne && a.alt > 400);
     for (const a of air) a.stca = 0;
+    this.conflictPairs = [];
     let anyLoss = false;
     for (let i = 0; i < air.length; i++) for (let j = i + 1; j < air.length; j++) {
       const a = air[i], b = air[j];
@@ -186,6 +314,7 @@ const game = {
       const key = a.cs + '|' + b.cs;
       if (d < 3 && dz < 1000) {
         a.stca = b.stca = 2; anyLoss = true;
+        this.conflictPairs.push({ a, b, d, loss: true });
         if (!this.sepPairs.has(key)) {
           this.sepPairs.add(key);
           this.stats.sepLoss++;
@@ -202,6 +331,7 @@ const game = {
         if (Math.min(d, df) < 3.2 && (dz < 1000 || Math.abs(za - zb) < 1000)) {
           if (a.stca === 0) a.stca = 1;
           if (b.stca === 0) b.stca = 1;
+          this.conflictPairs.push({ a, b, d, loss: false });
         }
       }
     }
@@ -217,11 +347,8 @@ const game = {
         const exitFix = DATA.SIDS[ac.sid]?.exit;
         const nearExit = exitFix && ac.fixDist(exitFix) < 3;
         if (d > DATA.AIRPORT.range - 2 || nearExit) {
-          ac.state = 'done'; ac.handedOff = true;
-          this.stats.departed++;
-          if (ac.alt >= 9500) this.addScore(100, ac.cs + ' transferido ao Centro no nível');
-          else this.addScore(40, ac.cs + ' transferido baixo (subida tardia)');
           this.radioPilot(ac, 'chamando o Centro, obrigado, até logo', 0.3);
+          this.completeHandoff(ac, false);
         }
       } else if (d > DATA.AIRPORT.range + 3 && !ac.offRadarPenalized) {
         ac.offRadarPenalized = true;
@@ -240,6 +367,7 @@ const game = {
     const h = dt / steps;
     for (let s = 0; s < steps; s++) {
       this.time += h;
+      this.updateWeather(h);
       for (const ac of this.aircraft) ac.update(h, this);
 
       // rádio pendente
@@ -266,12 +394,39 @@ const game = {
     if (this.selected && this.selected.state === 'done') this.select(null);
   },
 
+  reset() {
+    this.aircraft = [];
+    this.selected = null;
+    this.score = 0;
+    this.time = 0;
+    this.simSpeed = 1;
+    this.paused = false;
+    this.started = false;
+    this.stats = { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 };
+    this.usedCs = new Set();
+    this.pendingRadio = [];
+    this.sepPairs = new Set();
+    this.weather = null;
+    this.atisIdx = 0;
+    this.windEvent = null;
+    UI.setAlarm(false);
+    document.getElementById('log').innerHTML = '';
+    document.getElementById('cmdInput').value = '';
+    document.getElementById('pausedTag').classList.add('hidden');
+    document.getElementById('btnPause').classList.remove('on');
+    document.querySelectorAll('#speedBtns button').forEach(x => x.classList.toggle('on', x.dataset.s === '1'));
+    UI.refreshStrips(); UI.refreshTop(); UI.refreshSelPanel();
+    document.getElementById('startOverlay').classList.remove('hidden');
+  },
+
   start(cfg, traffic) {
     this.cfg = cfg;
     this.traffic = traffic;
+    this.initWeather();
     this.started = true;
     document.getElementById('startOverlay').classList.add('hidden');
-    document.getElementById('cfgLabel').textContent = DATA.CONFIGS[cfg].label;
+    document.getElementById('cfgLabel').textContent =
+      DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + DATA.CONFIGS[cfg].label;
     UI.logSys('Posição assumida. ' + DATA.CONFIGS[cfg].label + '. Vento ' + this.windStr() + '. Bom serviço!');
     // tráfego inicial
     this.spawnArrival();
@@ -283,23 +438,81 @@ const game = {
 };
 
 // ---------------- bootstrap ----------------
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   const cv = document.getElementById('radar');
   Radar.init(cv, game);
   UI.init(game);
 
   // tela inicial
-  let selCfg = '09', selTraffic = 'normal';
-  document.querySelectorAll('#cfgPick button').forEach(b => b.onclick = () => {
-    selCfg = b.dataset.cfg;
-    document.querySelectorAll('#cfgPick button').forEach(x => x.classList.toggle('on', x === b));
-  });
+  let selCfg = null, selTraffic = 'normal';
+
+  function buildCfgButtons() {
+    const box = document.getElementById('cfgPick');
+    box.innerHTML = '';
+    const keys = Object.keys(DATA.CONFIGS);
+    selCfg = keys.includes(DATA.AIRPORT.defaultCfg) ? DATA.AIRPORT.defaultCfg : (keys[0] || null);
+    keys.forEach(k => {
+      const c = DATA.CONFIGS[k];
+      const b = document.createElement('button');
+      b.textContent = c.btn || c.label || k;
+      b.classList.toggle('on', k === selCfg);
+      b.onclick = () => {
+        selCfg = k;
+        box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      };
+      box.appendChild(b);
+    });
+  }
+
+  async function selectAirport(entry, btn) {
+    document.querySelectorAll('#airportPick button').forEach(x => x.classList.toggle('on', x === btn));
+    await DATA.loadAirport(entry.file);
+    document.querySelector('.startCard .sub').textContent =
+      `Aeroporto ${DATA.AIRPORT.name} (${DATA.AIRPORT.icao}) — Controle de Aproximação e Torre`;
+    buildCfgButtons();
+    Radar.fitView();
+  }
+
+  try {
+    const manifest = await DATA.loadManifest();
+    const box = document.getElementById('airportPick');
+    box.innerHTML = '';
+    manifest.forEach((m, i) => {
+      const b = document.createElement('button');
+      b.textContent = m.title;
+      b.title = m.desc || '';
+      b.onclick = () => selectAirport(m, b).catch(e => UI.logSys('Erro ao carregar aeroporto: ' + e.message, 'bad'));
+      if (i === 0) b.classList.add('on');
+      box.appendChild(b);
+    });
+    if (manifest.length) await DATA.loadAirport(manifest[0].file);
+    buildCfgButtons();
+  } catch (e) {
+    document.querySelector('.startCard .sub').textContent =
+      'ERRO ao carregar dados: ' + e.message + ' — o jogo precisa ser servido por HTTP (ex.: python -m http.server)';
+  }
+
   document.querySelectorAll('#trafficPick button').forEach(b => b.onclick = () => {
     selTraffic = b.dataset.t;
     document.querySelectorAll('#trafficPick button').forEach(x => x.classList.toggle('on', x === b));
   });
-  document.getElementById('btnStart').onclick = () => { game.start(selCfg, selTraffic); Radar.fitView(); };
+  document.getElementById('btnStart').onclick = () => {
+    if (!selCfg) return;
+    game.start(selCfg, selTraffic);
+    Radar.fitView();
+  };
   document.getElementById('btnStartCharts').onclick = () => UI.openCharts();
+
+  // menu de reinício
+  document.getElementById('btnRestart').onclick = () => {
+    if (game.started) document.getElementById('restartModal').classList.remove('hidden');
+  };
+  document.getElementById('btnRestartYes').onclick = () => {
+    document.getElementById('restartModal').classList.add('hidden');
+    game.reset();
+  };
+  document.getElementById('btnRestartNo').onclick = () =>
+    document.getElementById('restartModal').classList.add('hidden');
 
   // loop de render/simulação
   let last = performance.now();
