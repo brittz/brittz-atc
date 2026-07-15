@@ -15,6 +15,7 @@ const Commands = (() => {
     'DIR','DCT','DIRETO','VIA','ILS','AP','POUSO','CTL',
     'ALINHAR','LU','DEC','TO','CTO','DECOLAR','TAKEOFF','TKFF','TKOF',
     'ESPERA','HOLD','ARR','GA','ARREMETER','SID','STAR','HO','TRANSFERIR','TRF',
+    'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR',
   ]);
 
   // encontra a aeronave pelo callsign completo ou sufixo único
@@ -60,6 +61,8 @@ const Commands = (() => {
         }
         case 'V': case 'VEL': case 'SPD': {
           if (arg === 'LIVRE' || arg === 'FREE') { r = ac.cmdSpd(0); atcParts.push('velocidade livre'); break; }
+          if (arg === 'MIN' || arg === 'MINIMA' || arg === 'MÍNIMA') { r = ac.cmdSpd('MIN'); atcParts.push('reduza para a mínima operacional'); break; }
+          if (arg === 'MAX' || arg === 'MAXIMA' || arg === 'MÁXIMA') { r = ac.cmdSpd('MAX'); atcParts.push('velocidade máxima'); break; }
           const v = parseInt(arg, 10);
           if (isNaN(v)) { r = { err: 'velocidade inválida' }; used = 1; break; }
           r = ac.cmdSpd(v);
@@ -140,6 +143,17 @@ const Commands = (() => {
           if (!r.err) atcParts.push('chame o Centro em 125.05, bom voo');
           break;
         }
+        case 'ABORTAR': case 'ABT': case 'RTO': case 'REJECT': {
+          r = ac.cmdAbort(); used = 1;
+          if (!r.err) atcParts.push('cancele a decolagem, abandone quando puder');
+          break;
+        }
+        case 'TAXI': case 'TAXIAR': {
+          if (!arg) { r = { err: 'informe a cabeceira (ex.: TAXI 27L)' }; used = 1; break; }
+          r = ac.cmdTaxi(arg);
+          if (!r.err) atcParts.push('taxie para a cabeceira ' + arg);
+          break;
+        }
         default:
           r = { err: `comando "${cmd}" desconhecido (veja Ajuda)` };
           used = 1;
@@ -171,14 +185,25 @@ const Commands = (() => {
     if (ci >= 0) {
       immediate = rest.slice(0, ci);
       const c = rest.slice(ci + 1);
-      let fix = null, dist = null, j = 0;
+      // [FIXO] [NM | pés | FLxxx] instrução... — número < 400 é NM, >= 400 é pés
+      let fix = null, dist = null, altC = null, j = 0;
       if (c[j] && U.fix(c[j])) { fix = c[j]; j++; }
-      if (c[j] && /^\d+(\.\d+)?$/.test(c[j])) { dist = parseFloat(c[j]); j++; }
+      if (c[j]) {
+        const fl = c[j].match(/^FL(\d{2,3})$/);
+        if (fl) { altC = parseInt(fl[1], 10) * 100; j++; }
+        else if (/^\d+(\.\d+)?$/.test(c[j])) {
+          const n = parseFloat(c[j]);
+          if (n >= 400) altC = n; else dist = n;
+          j++;
+        }
+      }
       const defTokens = c.slice(j);
-      if (!fix && dist === null) return { err: 'APOS: informe um fixo e/ou uma distância em NM (ex.: APOS GOMES 5 A 5000)' };
+      if (fix && altC !== null) return { err: 'APOS: combine fixo com distância, não com altitude' };
+      if (!fix && dist === null && altC === null)
+        return { err: 'APOS: informe um fixo, distância em NM ou altitude (ex.: APOS GOMES 5 · APOS 5000 · APOS FL80)' };
       if (!defTokens.length) return { err: 'APOS: informe a instrução a executar' };
       if (!KNOWN.has(defTokens[0])) return { err: `APOS: instrução "${defTokens[0]}" desconhecida` };
-      cond = { fix, dist, tokens: defTokens };
+      cond = { fix, dist, alt: altC, tokens: defTokens };
     }
 
     const { results, atcParts } = immediate.length ? run(ac, immediate, game) : { results: [], atcParts: [] };
@@ -188,8 +213,11 @@ const Commands = (() => {
       const v = ac.addPending(cond);
       results.push(v);
       if (!v.err) {
-        const when = (cond.fix ? cond.fix : '') + (cond.fix && cond.dist ? ' + ' : '') + (cond.dist ? cond.dist + ' NM' : '');
-        atcParts.push('após ' + when + ': ' + cond.tokens.join(' '));
+        const parts = [];
+        if (cond.fix) parts.push(cond.fix);
+        if (cond.dist) parts.push(cond.dist + ' NM');
+        if (cond.alt != null) parts.push(U.fmtAlt(cond.alt));
+        atcParts.push('após ' + parts.join(' + ') + ': ' + cond.tokens.join(' '));
       }
     }
 

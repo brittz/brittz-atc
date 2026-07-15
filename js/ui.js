@@ -139,6 +139,7 @@ const UI = (() => {
     if (a.state === 'holdshort') return 'PRONTO ' + a.rwy;
     if (a.state === 'lineup') return 'ALINHADO';
     if (a.state === 'takeoff') return 'DECOLANDO';
+    if (a.state === 'abort') return 'RTO';
     if (a.state === 'rollout') return 'POUSOU';
     if (a.goingAround) return 'ARREMET.';
     if (a.app.phase === 'gs') return (a.landClr ? 'POUSO ' : 'FINAL ') + a.app.rwy;
@@ -248,9 +249,14 @@ const UI = (() => {
       btn('Alinhar ' + a.rwy, 'ALINHAR ' + a.rwy);
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
       btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
+      if (DATA.RWY_PAIR[a.rwy] !== DATA.RWY_PAIR[cfg.depRwy])
+        btn('Táxi p/ ' + cfg.depRwy, 'TAXI ' + cfg.depRwy, 'alt');
     } else if (a.state === 'lineup') {
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
       btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
+      btn('Abandonar a pista', 'ABORTAR', 'bad');
+    } else if (a.state === 'takeoff') {
+      btn('ABORTAR decolagem', 'ABORTAR', 'bad');
     } else if (a.airborne) {
       if (a.kind === 'arr') {
         if (a.star && !a.via && a.nav.mode === 'route') btn('Descer VIA STAR', 'VIA', 'good');
@@ -268,6 +274,7 @@ const UI = (() => {
       } else {
         btn('Transferir ao Centro', 'HO', 'good');
       }
+      btn('V mín', 'V MIN', 'spd');
       btn('Vel. livre', 'V LIVRE', 'spd');
     }
     // roletas: em voo sempre; no solo só para saídas (autorizações pré-decolagem)
@@ -444,9 +451,22 @@ const UI = (() => {
       game.simSpeed = parseInt(b.dataset.s, 10);
       document.querySelectorAll('#speedBtns button').forEach(x => x.classList.toggle('on', x === b));
     });
-    $('btnSound').onclick = () => { game.settings.sound = !game.settings.sound; $('btnSound').classList.toggle('off', !game.settings.sound); if (!game.settings.sound) setAlarm(false); };
-    $('btnTts').onclick = () => { game.settings.tts = !game.settings.tts; $('btnTts').classList.toggle('off', !game.settings.tts); if (!game.settings.tts) speechSynthesis.cancel(); };
+    $('btnSound').classList.toggle('off', !game.settings.sound);
+    $('btnTts').classList.toggle('off', !game.settings.tts);
+    $('btnSound').onclick = () => { game.settings.sound = !game.settings.sound; $('btnSound').classList.toggle('off', !game.settings.sound); if (!game.settings.sound) setAlarm(false); game.savePrefs(); };
+    $('btnTts').onclick = () => { game.settings.tts = !game.settings.tts; $('btnTts').classList.toggle('off', !game.settings.tts); if (!game.settings.tts) speechSynthesis.cancel(); game.savePrefs(); };
     $('btnCenter').onclick = () => Radar.fitView();
+
+    // configurações de exibição (persistidas em localStorage)
+    const setChk = (id, key) => {
+      const el = $(id);
+      el.checked = !!game.settings[key];
+      el.onchange = () => { game.settings[key] = el.checked; game.savePrefs(); };
+    };
+    setChk('setTrailLine', 'trailLine');
+    setChk('setSweep', 'sweep');
+    setChk('setFixNames', 'fixNames');
+    $('btnSettings').onclick = () => $('settingsModal').classList.remove('hidden');
 
     // sidebar recolhível (essencial no celular)
     const applySidebar = show => {

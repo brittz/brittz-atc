@@ -247,6 +247,16 @@ button.primary:hover { background: #1a5a42; }
 .modalBox.help td:first-child { white-space: nowrap; }
 .modalBox.help code { color: var(--sel); background: #06121a; padding: 1px 5px; border-radius: 3px; }
 
+/* ===== configurações ===== */
+.modalBox.settings { width: 420px; max-width: 92vw; }
+.modalBox.settings h2 { color: var(--arr); margin-bottom: 12px; }
+.modalBox.settings label {
+  display: block; padding: 7px 4px; cursor: pointer; line-height: 1.4;
+}
+.modalBox.settings label:hover { background: #11202c; }
+.modalBox.settings input { margin-right: 8px; accent-color: var(--good); }
+.modalBox.settings .tiny { margin-top: 12px; line-height: 1.4; }
+
 /* ===== ATIS ===== */
 .modalBox.atis { width: 460px; max-width: 92vw; }
 .modalBox.atis h2 { color: var(--arr); margin-bottom: 10px; }

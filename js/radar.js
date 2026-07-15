@@ -193,7 +193,7 @@ const Radar = (() => {
     drawFixes();
     drawRunways();
     if (game.selected) drawIntent(game.selected);
-    for (const a of game.aircraft) if (a.airborne || a.state === 'takeoff' || a.state === 'rollout' || a.state === 'lineup' || a.state === 'holdshort') drawAircraft(a);
+    for (const a of game.aircraft) if (a.airborne || ['takeoff', 'rollout', 'lineup', 'holdshort', 'abort'].includes(a.state)) drawAircraft(a);
     drawConflicts();
     drawCursorInfo();
   }
@@ -327,6 +327,20 @@ const Radar = (() => {
     if (a.stca === 2) col = (Math.floor(performance.now() / 300) % 2) ? C.alert : '#7a1020';
     if (a.emergency) col = (Math.floor(performance.now() / 500) % 2) ? C.alert : col;
 
+    // linha de histórico da rota (opcional, nas configurações)
+    if (game.settings.trailLine && a.path && a.path.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = C.trail; ctx.globalAlpha = 0.3; ctx.lineWidth = 1;
+      ctx.beginPath();
+      a.path.forEach(([px, py], i) => {
+        const [tx2, ty2] = toScreen(px, py);
+        i ? ctx.lineTo(tx2, ty2) : ctx.moveTo(tx2, ty2);
+      });
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // trilha
     ctx.fillStyle = C.trail;
     a.trail.forEach(([tx, ty], i) => {
@@ -372,6 +386,7 @@ const Radar = (() => {
     if (a.state === 'holdshort') l3 = 'PRONTO ' + a.rwy;
     if (a.state === 'lineup') l3 = 'ALINHADO ' + a.rwy;
     if (a.state === 'takeoff') l3 = 'ROLANDO ' + a.rwy;
+    if (a.state === 'abort') l3 = 'ABORTANDO';
     if (a.state === 'rollout') l3 = 'POUSOU';
     if (a.goingAround) l3 = 'ARREMETIDA';
 

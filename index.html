@@ -26,6 +26,7 @@
   <button id="btnHelp">❔ Ajuda</button>
   <button id="btnRestart" title="Reiniciar fase / voltar ao menu">↺ Menu</button>
   <button id="btnSidebar" title="Mostrar/ocultar strips e comunicações">📋 Strips</button>
+  <button id="btnSettings" title="Configurações de exibição">⚙</button>
   <button id="btnFull" title="Tela cheia">⛶</button>
 </div>
 
@@ -108,8 +109,22 @@
       <button id="btnStart" class="primary">▶ Assumir a posição</button>
       <button id="btnStartCharts">📑 Estudar as cartas</button>
     </div>
+    <p class="tiny" id="recordLine"></p>
     <p class="tiny">Dica: clique numa aeronave (ou na strip) e use os botões rápidos, ou digite a fraseologia.
        Comece autorizando <b>VIA</b> (descer via STAR) e depois <b>ILS</b> + <b>AP</b>.</p>
+  </div>
+</div>
+
+<!-- ===== configurações ===== -->
+<div id="settingsModal" class="modal hidden">
+  <div class="modalBox settings">
+    <button class="close">✕</button>
+    <h2>Configurações</h2>
+    <label><input type="checkbox" id="setTrailLine"> Linha de histórico da rota das aeronaves</label>
+    <label><input type="checkbox" id="setSweep"> Varredura do radar (animação)</label>
+    <label><input type="checkbox" id="setFixNames"> Nomes dos fixos no radar</label>
+    <p class="tiny">As preferências e o recorde de pontuação ficam salvos apenas neste navegador
+       (localStorage) — nada é enviado a servidores.</p>
   </div>
 </div>
 
@@ -161,7 +176,11 @@
       <tr><td><code>V 220</code> / <code>V LIVRE</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
       <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
       <tr><td><code>P TOLDO</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele)</td></tr>
-      <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita só fixo ou só distância; o resto da linha é a instrução; aliases <code>APÓS</code>/<code>AFTER</code>)</td></tr>
+      <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita fixo, distância ou altitude; o resto da linha é a instrução; aliases <code>APÓS</code>/<code>AFTER</code>)</td></tr>
+      <tr><td><code>APOS 5000 DIR GOMES</code> · <code>APOS FL80 V 280</code></td><td>Condicional por altitude: número ≥ 400 é pés, &lt; 400 é NM; dispara ao cruzar o nível subindo ou descendo</td></tr>
+      <tr><td><code>V MIN</code> / <code>V MAX</code></td><td>Mínima/máxima operacional — o valor exato fica a critério do comandante (flape, peso, fase do voo)</td></tr>
+      <tr><td><code>ABORTAR</code> / <code>RTO</code></td><td>Aborta a decolagem em rolagem (antes de V1) ou abandona a pista se alinhado; a aeronave taxia de volta à cabeceira</td></tr>
+      <tr><td><code>TAXI 27L</code></td><td>Taxia uma saída do ponto de espera para outra cabeceira (útil após trocar as pistas em uso); a SID é re-arquivada para o novo fluxo</td></tr>
       <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>). Se a condicional for lateral (<code>DIR</code>/<code>P</code>), a aeronave mantém a proa de pista até disparar, em vez de engatar a SID aos 900 ft</td></tr>
       <tr><td><code>DIR GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela)</td></tr>
       <tr><td><code>VIA</code></td><td>Chegada: descer via STAR (cumpre as restrições da carta). Saída: <b>subir via SID</b> até o teto publicado — combine com a decolagem (<code>DEC 09R VIA</code>) ou com condicional (<code>DEC 09R APOS 5 VIA</code>)</td></tr>

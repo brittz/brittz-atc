@@ -39,8 +39,10 @@ class Aircraft {
       sidEngaged: opts.kind === 'arr', // saídas engatam a SID a 900 ft
       depHdg: null,                    // proa designada antes da decolagem
       holdRwyHdg: false,               // manter proa de pista até a condicional
-      pending: [],                     // instruções condicionais (APOS fixo/NM)
+      pending: [],                     // instruções condicionais (APOS fixo/NM/pés)
+      spdMode: null,                   // null | 'min' | 'max' (a critério do comandante)
       trail: [], trailT: 0,
+      path: [], pathT: 0,              // histórico completo da rota (linha opcional)
       stca: 0,                   // 0 ok, 1 previsto, 2 perda
       timer: opts.timer ?? 0,    // uso genérico (taxi, rollout...)
       handedOff: false,
@@ -101,6 +103,11 @@ class Aircraft {
   }
   cmdSpd(spd) {
     if (this.onGround) return { err: 'ainda no solo' };
+    // mínima/máxima operacional: o valor fica a critério do comandante
+    // (flape, peso, margem de estol) e varia com a fase do voo
+    if (spd === 'MIN') { this.spdMode = 'min'; this.clrSpd = 0; return { rb: 'Reduzindo para a velocidade mínima operacional' }; }
+    if (spd === 'MAX') { this.spdMode = 'max'; this.clrSpd = 0; return { rb: 'Acelerando para a velocidade máxima' }; }
+    this.spdMode = null;
     if (spd !== 0 && spd < this.perf.min) return { err: `impossível, nossa mínima é ${this.perf.min} nós` };
     if (spd > this.perf.max) return { err: `impossível, nossa máxima é ${this.perf.max} nós` };
     this.clrSpd = spd;
@@ -201,6 +208,41 @@ class Aircraft {
     this.timer = wasLinedUp ? 0 : 6; // tempo para alinhar antes de rolar
     return { rb: 'Autorizado decolagem pista ' + this.rwy + ', rolando' };
   }
+  // abortar a decolagem (RTO): desacelera na pista e taxia de volta à cabeceira
+  cmdAbort() {
+    if (this.state === 'lineup') {
+      this.state = 'taxi';
+      this.timer = U.rnd(40, 80);
+      return { rb: 'Abandonando a pista, taxiando de volta à cabeceira' };
+    }
+    if (this.state !== 'takeoff') return { err: 'não estamos em rolagem de decolagem' };
+    if (this.spd > this.perf.vr - 12) return { err: 'acima de V1, vamos prosseguir a decolagem' };
+    this.state = 'abort';
+    return { rb: 'Abortando a decolagem' };
+  }
+
+  // taxiar para outra cabeceira (ex.: após troca das pistas em uso)
+  cmdTaxi(rwy) {
+    if (!DATA.RUNWAYS[rwy]) return { err: 'pista desconhecida' };
+    if (!['holdshort', 'lineup'].includes(this.state)) return { err: 'não estamos no pátio nem no ponto de espera' };
+    if (DATA.RWY_PAIR[rwy] === DATA.RWY_PAIR[this.rwy] && this.state === 'holdshort' && rwy === this.rwy)
+      return { err: 'já estamos no ponto de espera da ' + rwy };
+    this.rwy = rwy;
+    this.state = 'taxi';
+    this.timer = U.rnd(50, 100);
+    // re-arquiva a SID para a configuração da nova pista, mantendo o destino
+    const cfgK = Object.keys(DATA.CONFIGS).find(k => DATA.CONFIGS[k].depRwy === rwy || DATA.CONFIGS[k].arrRwy === rwy);
+    if (cfgK && this.sid && DATA.SIDS[this.sid]) {
+      const exit = DATA.SIDS[this.sid].exit;
+      const nova = Object.entries(DATA.SIDS).find(([, s]) => s.cfg === cfgK && s.exit === exit);
+      if (nova && nova[0] !== this.sid) {
+        this.sid = nova[0];
+        return { rb: 'Taxiando para a cabeceira ' + rwy + ', nova saída ' + this.sid };
+      }
+    }
+    return { rb: 'Taxiando para a cabeceira ' + rwy };
+  }
+
   cmdHold(fixName) {
     if (!this.airborne) return { err: 'ainda no solo' };
     if (!U.fix(fixName)) return { err: 'fixo desconhecido' };
@@ -259,11 +301,13 @@ class Aircraft {
     const p = {
       fix: cond.fix || null,
       dist: cond.dist ?? null,
+      alt: cond.alt ?? null,     // condição por altitude (pés)
+      altDir: null,              // +1 cruzar subindo, -1 cruzar descendo
       tokens: cond.tokens,
       armed: !cond.fix,          // com fixo: arma ao cruzá-lo
       origin: null,              // ponto de referência para medir a distância
     };
-    if (!p.fix) {
+    if (!p.fix && p.alt === null) {
       // sem fixo: mede da posição atual (ou da corrida de decolagem, se no solo)
       if (this.airborne) p.origin = [this.x, this.y];
       // no solo: origem definida quando a rolagem começar (checkPending)
@@ -276,15 +320,27 @@ class Aircraft {
       this.holdRwyHdg = true;
       extra = ', mantendo a proa de pista até lá';
     }
-    p.label = 'após ' + (p.fix ? p.fix + ' ' : '') + (p.dist ? p.dist + ' NM ' : '') + '→ ' + p.tokens.join(' ');
+    const whenParts = [];
+    if (p.fix) whenParts.push(p.fix);
+    if (p.dist) whenParts.push(p.dist + ' NM');
+    if (p.alt !== null) whenParts.push(U.fmtAlt(p.alt));
+    p.label = 'após ' + whenParts.join(' + ') + ' → ' + p.tokens.join(' ');
     this.pending.push(p);
-    const when = (p.fix ? p.fix : '') + (p.fix && p.dist ? ', ' : '') + (p.dist ? p.dist + ' milhas' : '');
-    return { rb: 'Após ' + when + ', ' + p.tokens.join(' ') + extra };
+    return { rb: 'Após ' + whenParts.join(', ') + ', ' + p.tokens.join(' ') + extra };
   }
 
   checkPending(game) {
     for (let i = this.pending.length - 1; i >= 0; i--) {
       const p = this.pending[i];
+      if (p.alt !== null) {
+        // condição por altitude: dispara ao cruzar o nível (sentido definido
+        // na primeira checagem — no solo, sempre subindo)
+        if (p.altDir === null) p.altDir = this.alt < p.alt ? 1 : -1;
+        if ((p.altDir > 0 && this.alt >= p.alt) || (p.altDir < 0 && this.alt <= p.alt)) {
+          this.pending.splice(i, 1); game.execPending(this, p);
+        }
+        continue;
+      }
       if (p.fix) {
         if (!p.armed) {
           if (this.fixDist(p.fix) < 1.4) { p.armed = true; p.origin = U.fix(p.fix).slice(); }
@@ -381,6 +437,20 @@ class Aircraft {
       return;
     }
 
+    if (this.state === 'abort') {
+      // frenagem máxima na pista, depois taxia de volta ao ponto de espera
+      this.spd = Math.max(0, this.spd - 4.5 * dt * 9);
+      this.moveStraight(dt);
+      if (this.spd <= 20) {
+        this.state = 'taxi';
+        this.timer = U.rnd(60, 110);
+        // zera a referência das condicionais por distância (nova corrida)
+        for (const p of this.pending) if (!p.fix && p.alt === null) p.origin = null;
+        game.radioPilot(this, 'decolagem abortada, livrando a pista e taxiando de volta à cabeceira', 1);
+      }
+      return;
+    }
+
     if (this.state === 'rollout') {
       this.spd = Math.max(0, this.spd - 3.5 * dt * 9);
       this.moveStraight(dt);
@@ -417,6 +487,13 @@ class Aircraft {
       this.trailT = 0;
       this.trail.push([this.x, this.y]);
       if (this.trail.length > 8) this.trail.shift();
+    }
+    // histórico completo (linha opcional nas configurações)
+    this.pathT += dt;
+    if (this.pathT >= 5) {
+      this.pathT = 0;
+      this.path.push([this.x, this.y]);
+      if (this.path.length > 240) this.path.shift();
     }
   }
 
@@ -545,6 +622,8 @@ class Aircraft {
 
   updateSpeed(dt) {
     let target = this.clrSpd > 0 ? this.clrSpd : this.defaultSpd();
+    if (this.spdMode === 'min') target = this.minSpdNow();
+    if (this.spdMode === 'max') target = this.perf.max;
     // regra dos 250 kt abaixo de 10.000 ft
     if (this.alt < 10000) target = Math.min(target, 250);
     // restrições de velocidade da carta quando "via"

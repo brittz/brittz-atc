@@ -13,13 +13,35 @@ const game = {
   started: false,
   cfg: '09',
   traffic: 'normal',   // calmo | normal | pico
-  settings: { sound: true, tts: true, sweep: true, fixNames: true },
+  settings: { sound: true, tts: true, sweep: true, fixNames: true, trailLine: false },
   stats: { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 },
   usedCs: new Set(),
   nextArr: 10, nextDep: 20,
   pendingRadio: [],    // mensagens de piloto com atraso
-  sepPairs: new Set(), // pares já penalizados nesta perda
+  sepPairs: new Map(), // pares em perda de separação: key -> {t, next}
   conflictPairs: [],   // pares em alerta (para desenhar no radar)
+
+  // ---------- persistência local (localStorage) ----------
+  loadPrefs() {
+    try { Object.assign(this.settings, JSON.parse(localStorage.getItem('atcv-settings') || '{}')); } catch (e) {}
+  },
+  savePrefs() {
+    try { localStorage.setItem('atcv-settings', JSON.stringify(this.settings)); } catch (e) {}
+  },
+  record() {
+    try { return JSON.parse(localStorage.getItem('atcv-record') || 'null'); } catch (e) { return null; }
+  },
+  saveRecordIfBest() {
+    const rec = this.record();
+    if (!rec || this.score > rec.score) {
+      try {
+        localStorage.setItem('atcv-record', JSON.stringify({
+          score: this.score, landed: this.stats.landed, departed: this.stats.departed,
+          date: new Date().toISOString().slice(0, 10),
+        }));
+      } catch (e) {}
+    }
+  },
 
   // ---------- utilidades ----------
   clock() {
@@ -134,6 +156,10 @@ const game = {
     this.publishAtis('nova configuração em vigor');
     UI.logSys('PISTAS EM USO: ' + c.label);
     UI.flashBanner('Pistas em uso: pousos ' + c.arrRwy + ' · decolagens ' + c.depRwy);
+    // aeronaves já no ponto de espera antigo: lembre o jogador do comando TAXI
+    if (this.aircraft.some(a => a.kind === 'dep' &&
+        ['holdshort', 'lineup'].includes(a.state) && DATA.RWY_PAIR[a.rwy] !== DATA.RWY_PAIR[c.depRwy]))
+      UI.logSys('Há saídas na cabeceira antiga — use "TAXI ' + c.depRwy + '" para reposicioná-las.');
   },
 
   // conclusão de transferência ao Centro (manual = via comando HO)
@@ -184,6 +210,7 @@ const game = {
     this.score = Math.max(0, this.score + n);
     UI.logSys((n >= 0 ? '+' : '') + n + ' pts — ' + why, n >= 0 ? 'good' : 'bad');
     if (n < 0) UI.flashBanner(why + ' (' + n + ' pts)', 'bad');
+    if (n > 0) this.saveRecordIfBest();
   },
 
   // ---------- geração de tráfego ----------
@@ -240,7 +267,7 @@ const game = {
   runwayOccupied(rwy, except) {
     const pair = DATA.RWY_PAIR[rwy];
     return this.aircraft.some(a => a !== except && a.state !== 'done' &&
-      ['lineup', 'takeoff', 'rollout'].includes(a.state) && DATA.RWY_PAIR[a.rwy] === pair);
+      ['lineup', 'takeoff', 'rollout', 'abort'].includes(a.state) && DATA.RWY_PAIR[a.rwy] === pair);
   },
 
   touchdown(ac) {
@@ -297,7 +324,7 @@ const game = {
   },
 
   // ---------- conflitos ----------
-  checkConflicts() {
+  checkConflicts(dt) {
     const air = this.aircraft.filter(a => a.airborne && a.alt > 400);
     for (const a of air) a.stca = 0;
     this.conflictPairs = [];
@@ -315,10 +342,18 @@ const game = {
       if (d < 3 && dz < 1000) {
         a.stca = b.stca = 2; anyLoss = true;
         this.conflictPairs.push({ a, b, d, loss: true });
-        if (!this.sepPairs.has(key)) {
-          this.sepPairs.add(key);
+        let e = this.sepPairs.get(key);
+        if (!e) {
+          e = { t: 0, next: 5 };
+          this.sepPairs.set(key, e);
           this.stats.sepLoss++;
           this.addScore(-200, 'PERDA DE SEPARAÇÃO: ' + a.cs + ' × ' + b.cs);
+        }
+        // penalidade contínua enquanto o conflito durar
+        e.t += dt || 0;
+        if (e.t >= e.next) {
+          e.next += 5;
+          this.addScore(-25, `conflito persiste há ${Math.round(e.t)} s: ${a.cs} × ${b.cs}`);
         }
       } else {
         if (d > 5 || dz > 1400) this.sepPairs.delete(key);
@@ -388,7 +423,7 @@ const game = {
       if (this.nextDep <= 0) { if (depCount < 7) this.spawnDeparture(); this.nextDep = U.rnd(rd * 0.7, rd * 1.3); }
     }
 
-    this.checkConflicts();
+    this.checkConflicts(dt);
     this.checkBoundaries();
     this.aircraft = this.aircraft.filter(a => a.state !== 'done');
     if (this.selected && this.selected.state === 'done') this.select(null);
@@ -405,7 +440,7 @@ const game = {
     this.stats = { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 };
     this.usedCs = new Set();
     this.pendingRadio = [];
-    this.sepPairs = new Set();
+    this.sepPairs = new Map();
     this.weather = null;
     this.atisIdx = 0;
     this.windEvent = null;
@@ -439,9 +474,15 @@ const game = {
 
 // ---------------- bootstrap ----------------
 window.addEventListener('DOMContentLoaded', async () => {
+  game.loadPrefs();
   const cv = document.getElementById('radar');
   Radar.init(cv, game);
   UI.init(game);
+
+  // recorde local (localStorage)
+  const rec = game.record();
+  if (rec) document.getElementById('recordLine').textContent =
+    `🏆 Recorde local: ${rec.score} pts (${rec.landed} pousos, ${rec.departed} saídas — ${rec.date})`;
 
   // tela inicial
   let selCfg = null, selTraffic = 'normal';
