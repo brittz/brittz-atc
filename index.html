@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATC Costa Verde — Controle de Aproximação SBCV</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand">🛫 <b>ATC COSTA VERDE</b> <span id="cfgLabel"></span></div>
+  <div class="stat">⏱ <span id="clockEl">13:20:00</span></div>
+  <div class="stat">🌬 <span id="windEl">—</span></div>
+  <div class="stat score">★ <span id="score">0</span> <small id="rankEl">Estagiário</small></div>
+  <div class="stat small">Pousos <b id="statLanded">0</b> · Saídas <b id="statDeparted">0</b> · Arrem. <b id="statGA">0</b> · Perdas sep. <b id="statSep">0</b></div>
+  <div class="spacer"></div>
+  <div id="speedBtns">
+    <button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button>
+  </div>
+  <button id="btnPause" title="Pausar (P)">⏸</button>
+  <button id="btnCenter" title="Centralizar radar">⌖</button>
+  <button id="btnSound" title="Sons">🔊</button>
+  <button id="btnTts" title="Voz dos pilotos">🗣</button>
+  <button id="btnCharts">📑 Cartas</button>
+  <button id="btnHelp">❔ Ajuda</button>
+</div>
+
+<div id="main">
+  <div id="radarWrap">
+    <canvas id="radar"></canvas>
+    <div id="pausedTag" class="hidden">SIMULAÇÃO PAUSADA</div>
+    <div id="banner"></div>
+    <div id="selPanel" class="hidden">
+      <div id="selCs">—</div>
+      <div id="selInfo"></div>
+      <div id="selData"></div>
+      <div id="quickBtns"></div>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="stripHead">CHEGADAS <span class="badge" id="countArr">0</span></div>
+    <div id="stripsArr" class="stripBox"></div>
+    <div class="stripHead">SAÍDAS <span class="badge" id="countDep">0</span></div>
+    <div id="stripsDep" class="stripBox"></div>
+    <div class="stripHead">COMUNICAÇÕES 121.5 · APP SBCV 119.1</div>
+    <div id="log"></div>
+    <div id="cmdRow">
+      <input id="cmdInput" type="text" autocomplete="off" spellcheck="false"
+        placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R  (Enter transmite)">
+    </div>
+    <div id="cmdHint">A alt · V vel · P proa · DIR fixo · VIA · ILS pista · AP pouso · ALINHAR · DEC · ESPERA fixo · ARR</div>
+  </div>
+</div>
+
+<!-- ===== tela inicial ===== -->
+<div id="startOverlay">
+  <div class="startCard">
+    <h1>🛫 ATC COSTA VERDE</h1>
+    <p class="sub">Aeroporto Internacional de Costa Verde (SBCV) — Controle de Aproximação e Torre</p>
+    <p>Você assume o console radar da TMA Costa Verde: sequencie as chegadas pelas STARs,
+       autorize aproximações ILS e pousos, libere decolagens e suba as saídas pelas SIDs até a
+       transferência ao Centro. Mantenha <b>3 NM / 1.000 ft</b> de separação — o STCA avisa, mas a
+       fita não perdoa.</p>
+    <div class="pickRow">
+      <span>Configuração:</span>
+      <span id="cfgPick">
+        <button data-cfg="09" class="on">Fluxo 09 (leste)</button>
+        <button data-cfg="27">Fluxo 27 (oeste)</button>
+      </span>
+    </div>
+    <div class="pickRow">
+      <span>Tráfego:</span>
+      <span id="trafficPick">
+        <button data-t="calmo">Calmo</button>
+        <button data-t="normal" class="on">Normal</button>
+        <button data-t="pico">Hora do pico</button>
+      </span>
+    </div>
+    <div class="startBtns">
+      <button id="btnStart" class="primary">▶ Assumir a posição</button>
+      <button id="btnStartCharts">📑 Estudar as cartas</button>
+    </div>
+    <p class="tiny">Dica: clique numa aeronave (ou na strip) e use os botões rápidos, ou digite a fraseologia.
+       Comece autorizando <b>VIA</b> (descer via STAR) e depois <b>ILS</b> + <b>AP</b>.</p>
+  </div>
+</div>
+
+<!-- ===== cartas ===== -->
+<div id="chartsModal" class="modal hidden">
+  <div class="modalBox charts">
+    <button class="close">✕</button>
+    <div id="chartList"></div>
+    <canvas id="chartCanvas"></canvas>
+  </div>
+</div>
+
+<!-- ===== ajuda ===== -->
+<div id="helpModal" class="modal hidden">
+  <div class="modalBox help">
+    <button class="close">✕</button>
+    <h2>Manual do controlador</h2>
+    <p>Digite <b>CALLSIGN</b> (ou só o final, ex. <code>3412</code>) seguido de uma ou mais instruções.
+       Com uma aeronave selecionada, pode omitir o callsign.</p>
+    <table>
+      <tr><td><code>A 6000</code> / <code>A FL120</code></td><td>Suba/desça para altitude ou nível</td></tr>
+      <tr><td><code>V 220</code> / <code>V LIVRE</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
+      <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
+      <tr><td><code>DIR GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela)</td></tr>
+      <tr><td><code>VIA</code></td><td>Descer via STAR — cumpre as restrições de altitude/velocidade da carta</td></tr>
+      <tr><td><code>ILS 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
+      <tr><td><code>AP</code> / <code>POUSO 09L</code></td><td>Autoriza o pouso (obrigatório antes de 1 NM final!)</td></tr>
+      <tr><td><code>ALINHAR 09R</code></td><td>Alinhar e manter</td></tr>
+      <tr><td><code>DEC 09R</code></td><td>Autoriza decolagem</td></tr>
+      <tr><td><code>ESPERA NIDOL</code></td><td>Órbita de espera sobre o fixo</td></tr>
+      <tr><td><code>ARR</code></td><td>Instrução de arremetida / cancela a aproximação</td></tr>
+      <tr><td><code>SID CACTO1</code></td><td>Troca a SID (apenas no solo)</td></tr>
+    </table>
+    <h3>Como pontuar</h3>
+    <ul>
+      <li><b>+100</b> pouso · <b>+100</b> saída transferida acima de 9.500 ft (+40 se abaixo) · <b>+150</b> bônus por emergência bem atendida</li>
+      <li><b>−200</b> perda de separação (3 NM / 1.000 ft) · <b>−100</b> arremetida · <b>−150</b> chegada esquecida fora da TMA</li>
+    </ul>
+    <h3>Fluxo típico de uma chegada</h3>
+    <p><code>VIA</code> (desce via STAR) → <code>ILS 09L</code> (na perna final da carta) → <code>AP</code> na final.
+       Sequencie por velocidade (<code>V 180</code>) ou vetores (<code>P …</code> + <code>ILS</code> para interceptar).</p>
+    <h3>Fluxo de uma saída</h3>
+    <p>Quando o piloto reportar pronto: <code>ALINHAR 09R</code> (opcional) → <code>DEC 09R</code> →
+       depois de no ar, <code>A FL150</code> para subir até a transferência automática no limite da TMA.</p>
+    <p class="tiny">Teclas: <b>P</b> pausa · <b>Enter</b> transmite · <b>↑/↓</b> histórico · <b>Esc</b> limpa · roda do mouse = zoom · arrastar = mover radar.</p>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/aircraft.js"></script>
+<script src="js/commands.js"></script>
+<script src="js/radar.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

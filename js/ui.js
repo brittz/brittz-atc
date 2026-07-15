@@ -1,0 +1,350 @@
+// ============================================================
+// UI: strips, log, painel de seleção, cartas, som e voz
+// ============================================================
+'use strict';
+
+const UI = (() => {
+  let game;
+  const $ = id => document.getElementById(id);
+
+  // ---------------- áudio ----------------
+  let actx = null;
+  function audio() {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  function radioClick() {
+    if (!game.settings.sound) return;
+    try {
+      const a = audio(), t = a.currentTime;
+      const buf = a.createBuffer(1, a.sampleRate * 0.05, a.sampleRate);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / ch.length) * 0.25;
+      const src = a.createBufferSource(); src.buffer = buf;
+      const g = a.createGain(); g.gain.value = 0.35;
+      src.connect(g).connect(a.destination); src.start(t);
+    } catch (e) {}
+  }
+  let alarmOsc = null;
+  function setAlarm(on) {
+    if (!game.settings.sound) on = false;
+    if (on && !alarmOsc) {
+      try {
+        const a = audio();
+        const o = a.createOscillator(), g = a.createGain();
+        o.type = 'square'; o.frequency.value = 780;
+        g.gain.value = 0.05;
+        o.connect(g).connect(a.destination);
+        o.start();
+        let hi = true;
+        alarmOsc = { o, g, iv: setInterval(() => {
+          if (!alarmOsc) return;
+          const t = a.currentTime;
+          hi = !hi;
+          alarmOsc.g.gain.setValueAtTime(hi ? 0.05 : 0, t);
+          alarmOsc.o.frequency.setValueAtTime(hi ? 780 : 620, t);
+        }, 260) };
+      } catch (e) {}
+    } else if (!on && alarmOsc) {
+      clearInterval(alarmOsc.iv);
+      try { alarmOsc.o.stop(); } catch (e) {}
+      alarmOsc = null;
+    }
+  }
+  function chime() {
+    if (!game.settings.sound) return;
+    try {
+      const a = audio(), t = a.currentTime;
+      [660, 880].forEach((f, i) => {
+        const o = a.createOscillator(), g = a.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.12, t + i * 0.12);
+        g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.25);
+        o.connect(g).connect(a.destination);
+        o.start(t + i * 0.12); o.stop(t + i * 0.12 + 0.3);
+      });
+    } catch (e) {}
+  }
+
+  // ---------------- voz (Web Speech) ----------------
+  let voices = [];
+  function loadVoices() {
+    voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('pt'));
+  }
+  function speak(ac, text) {
+    if (!game.settings.tts || !('speechSynthesis' in window)) return;
+    loadVoices();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'pt-BR';
+    if (voices.length) u.voice = voices[hash(ac.cs) % voices.length];
+    u.rate = 1.15 + (hash(ac.cs) % 4) * 0.06;
+    u.pitch = 0.8 + (hash(ac.cs) % 7) * 0.09;
+    u.volume = 0.9;
+    speechSynthesis.speak(u);
+  }
+  function hash(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+
+  // ---------------- log de comunicações ----------------
+  function log(from, text, cls) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + (cls || '');
+    const t = game.clock();
+    el.innerHTML = `<span class="t">${t}</span> <span class="who">${from}</span> ${text}`;
+    const box = $('log');
+    box.appendChild(el);
+    while (box.children.length > 120) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+  function logATC(text) { log('SBCV APP', text, 'atc'); radioClick(); }
+  function logPilot(ac, text) {
+    log(ac.cs, text, 'pilot' + (ac.emergency ? ' emg' : ''));
+    radioClick();
+    speak(ac, text.replace(ac.cs, '').trim() + ', ' + spellCallsign(ac));
+  }
+  function logSys(text, cls) { log('SISTEMA', text, 'sys ' + (cls || '')); }
+
+  function spellCallsign(ac) {
+    const num = ac.cs.replace(/^[A-Z]+/, '').split('').join(' ');
+    return ac.radio + ' ' + num;
+  }
+
+  // ---------------- strips ----------------
+  function refreshStrips() {
+    const arrBox = $('stripsArr'), depBox = $('stripsDep');
+    arrBox.innerHTML = ''; depBox.innerHTML = '';
+    let na = 0, nd = 0;
+    for (const a of game.aircraft) {
+      if (a.state === 'done') continue;
+      const el = document.createElement('div');
+      el.className = 'strip ' + a.kind + (game.selected === a ? ' sel' : '') +
+        (a.stca === 2 ? ' alert' : a.stca === 1 ? ' warn' : '') + (a.emergency ? ' emg' : '');
+      const status = stripStatus(a);
+      const proc = a.kind === 'arr' ? (a.star || '—') : (a.sid || '—');
+      el.innerHTML =
+        `<div class="s1"><b>${a.cs}</b><span>${a.type}/${a.perf.wtc}</span><span>${a.kind === 'arr' ? '' : a.dest || ''}</span></div>` +
+        `<div class="s2"><span>${proc}</span><span>${a.onGround ? '' : Math.round(a.alt / 100).toString().padStart(3, '0') + '↦' + Math.round(a.clrAlt / 100).toString().padStart(3, '0')}</span><span class="st">${status}</span></div>`;
+      el.onclick = () => game.select(a);
+      if (a.kind === 'arr') { arrBox.appendChild(el); na++; } else { depBox.appendChild(el); nd++; }
+    }
+    $('countArr').textContent = na;
+    $('countDep').textContent = nd;
+  }
+
+  function stripStatus(a) {
+    if (a.state === 'taxi') return 'TÁXI ' + Math.ceil(a.timer) + 's';
+    if (a.state === 'holdshort') return 'PRONTO ' + a.rwy;
+    if (a.state === 'lineup') return 'ALINHADO';
+    if (a.state === 'takeoff') return 'DECOLANDO';
+    if (a.state === 'rollout') return 'POUSOU';
+    if (a.goingAround) return 'ARREMET.';
+    if (a.app.phase === 'gs') return (a.landClr ? 'POUSO ' : 'FINAL ') + a.app.rwy;
+    if (a.app.phase === 'loc') return 'LOC ' + a.app.rwy;
+    if (a.app.phase === 'cleared') return 'ILS ' + a.app.rwy;
+    if (a.nav.mode === 'hold') return 'ESPERA';
+    if (a.via) return 'DESC VIA';
+    if (a.nav.mode === 'hdg' && a.airborne) return 'VETOR';
+    return a.kind === 'arr' ? 'STAR' : 'SUBIDA';
+  }
+
+  // ---------------- painel de seleção ----------------
+  function refreshSelPanel() {
+    const p = $('selPanel');
+    const a = game.selected;
+    if (!a || a.state === 'done') { p.classList.add('hidden'); return; }
+    p.classList.remove('hidden');
+    $('selCs').textContent = a.cs + (a.emergency ? ' ⚠ EMERGÊNCIA' : '');
+    $('selInfo').textContent =
+      `${a.type}/${a.perf.wtc} · ${a.kind === 'arr' ? 'Chegada ' + (a.star || '') : 'Saída ' + (a.sid || '') + (a.dest ? ' → ' + a.dest : '')}`;
+    $('selData').textContent = a.onGround
+      ? `No solo — ${stripStatus(a)}`
+      : `ALT ${Math.round(a.alt)} ft (autz ${Math.round(a.clrAlt)}) · VEL ${Math.round(a.spd)} kt · PROA ${U.fmtHdg(a.hdg)} · ${stripStatus(a)}`;
+
+    // botões contextuais
+    const q = $('quickBtns');
+    q.innerHTML = '';
+    const btn = (label, cmd, cls) => {
+      const b = document.createElement('button');
+      b.textContent = label; b.className = cls || '';
+      b.onclick = () => game.runCommand(a.cs + ' ' + cmd);
+      q.appendChild(b);
+    };
+    const cfg = DATA.CONFIGS[game.cfg];
+    if (a.state === 'holdshort') {
+      btn('Alinhar ' + a.rwy, 'ALINHAR ' + a.rwy);
+      btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
+    } else if (a.state === 'lineup') {
+      btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
+    } else if (a.airborne) {
+      if (a.kind === 'arr') {
+        if (a.star && !a.via && a.nav.mode === 'route') btn('Descer VIA STAR', 'VIA', 'good');
+        if (a.app.phase === 'none') {
+          btn('ILS ' + cfg.arrRwy, 'ILS ' + cfg.arrRwy, 'good');
+          btn('ILS ' + cfg.depRwy, 'ILS ' + cfg.depRwy);
+        } else if (!a.landClr) {
+          btn('Autorizar pouso', 'AP', 'good');
+          btn('Arremeter', 'ARR', 'bad');
+        } else btn('Arremeter', 'ARR', 'bad');
+      }
+      for (const alt of [3000, 4000, 5000, 6000, 8000, 10000, 12000])
+        if (Math.abs(alt - a.clrAlt) > 100) btn((alt < a.alt ? '↓' : '↑') + (alt >= 10000 ? 'FL' + alt / 100 : alt / 1000 + 'k'), 'A ' + alt, 'alt');
+      for (const v of [180, 200, 220, 250, 280]) btn(v + 'kt', 'V ' + v, 'spd');
+      btn('Vel. livre', 'V LIVRE', 'spd');
+    }
+  }
+
+  // ---------------- cartas ----------------
+  function openCharts() {
+    $('chartsModal').classList.remove('hidden');
+    const list = $('chartList');
+    list.innerHTML = '';
+    const mk = (title, items, kind) => {
+      const h = document.createElement('div'); h.className = 'chartGroup'; h.textContent = title; list.appendChild(h);
+      for (const [id, p] of items) {
+        const b = document.createElement('button');
+        b.textContent = id + (p.cfg === game.cfg ? '' : ' (inativa)');
+        b.className = p.cfg === game.cfg ? '' : 'dim';
+        b.onclick = () => { drawChart(id, p, kind); list.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); };
+        list.appendChild(b);
+      }
+    };
+    mk('CHEGADAS (STAR)', Object.entries(DATA.STARS), 'star');
+    mk('SAÍDAS (SID)', Object.entries(DATA.SIDS), 'sid');
+    const first = Object.entries(DATA.STARS).find(([, p]) => p.cfg === game.cfg);
+    if (first) { drawChart(first[0], first[1], 'star'); list.querySelectorAll('button')[0].classList.add('on'); }
+  }
+
+  function drawChart(id, proc, kind) {
+    const cv = $('chartCanvas');
+    const ctx = cv.getContext('2d');
+    const W = cv.width = cv.clientWidth * 2, H = cv.height = cv.clientHeight * 2;
+    ctx.fillStyle = '#f4efe4'; ctx.fillRect(0, 0, W, H); // papel de carta aeronáutica
+    ctx.scale(2, 2);
+    const w = W / 2, h = H / 2;
+
+    const pts = kind === 'star' ? proc.route.map(r => U.fix(r.fix)) : proc.route.map(f => U.fix(f));
+    const all = [...pts, [0, 0], [3, 3], [-3, -3]];
+    const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+    const minX = Math.min(...xs) - 6, maxX = Math.max(...xs) + 6;
+    const minY = Math.min(...ys) - 6, maxY = Math.max(...ys) + 6;
+    const sc = Math.min((w - 60) / (maxX - minX), (h - 110) / (maxY - minY));
+    const px = x => 30 + (x - minX) * sc + (w - 60 - (maxX - minX) * sc) / 2;
+    const py = y => h - 70 - (y - minY) * sc - (h - 130 - (maxY - minY) * sc) / 2;
+
+    // cabeçalho
+    ctx.fillStyle = '#1a1a2e';
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.fillText(`${DATA.AIRPORT.icao} — ${proc.name}`, 14, 22);
+    ctx.font = '11px Georgia, serif';
+    ctx.fillText(kind === 'star'
+      ? 'Chegada padrão por instrumentos · Restrições: cruzar NO fixo na altitude/velocidade indicadas ("descer via")'
+      : 'Saída padrão · Proa de pista até 900 ft AGL, então navega pelos fixos · Subida inicial 5.000 ft', 14, 38);
+    ctx.strokeStyle = '#1a1a2e'; ctx.strokeRect(6, 6, w - 12, h - 12);
+
+    // aeroporto
+    ctx.fillStyle = '#333';
+    ctx.fillRect(px(-0.95), py(0.4) - 1.5, 1.9 * sc, 3);
+    ctx.fillRect(px(-0.95), py(-0.4) - 1.5, 1.9 * sc, 3);
+    ctx.font = 'bold 10px Georgia, serif';
+    ctx.fillText(DATA.AIRPORT.icao, px(0) - 14, py(0) + 18);
+
+    // rota
+    ctx.strokeStyle = '#20206a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(px(x), py(y)) : ctx.lineTo(px(x), py(y)));
+    ctx.stroke();
+    // setas
+    for (let i = 1; i < pts.length; i++) {
+      const [x1, y1] = pts[i - 1], [x2, y2] = pts[i];
+      const mx = px((x1 + x2) / 2), my = py((y1 + y2) / 2);
+      const ang = Math.atan2(py(y2) - py(y1), px(x2) - px(x1));
+      ctx.save(); ctx.translate(mx, my); ctx.rotate(ang);
+      ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath();
+      ctx.fillStyle = '#20206a'; ctx.fill(); ctx.restore();
+    }
+
+    // fixos + restrições
+    ctx.lineWidth = 1.4;
+    (kind === 'star' ? proc.route : proc.route.map(f => ({ fix: f }))).forEach((r, i) => {
+      const [x, y] = U.fix(r.fix);
+      const X = px(x), Y = py(y);
+      ctx.strokeStyle = '#20206a'; ctx.fillStyle = '#20206a';
+      ctx.beginPath(); ctx.moveTo(X, Y - 6); ctx.lineTo(X - 5, Y + 4); ctx.lineTo(X + 5, Y + 4); ctx.closePath(); ctx.stroke();
+      ctx.font = 'bold 11px Georgia, serif';
+      ctx.fillText(r.fix, X + 8, Y - 2);
+      if (r.alt) {
+        ctx.font = '10px Georgia, serif';
+        ctx.fillStyle = '#8a2020';
+        ctx.fillText((r.alt >= 10000 ? 'FL' + r.alt / 100 : r.alt.toLocaleString('pt-BR') + ' ft'), X + 8, Y + 10);
+        if (r.spd) ctx.fillText(r.spd + ' kt', X + 8, Y + 21);
+      }
+    });
+
+    // rodapé
+    ctx.fillStyle = '#1a1a2e'; ctx.font = '10px Georgia, serif';
+    const rwys = proc.cfg === '09' ? 'RWY 09L/09R' : 'RWY 27R/27L';
+    ctx.fillText(`Config ${rwys} · Uso exclusivo em simulação — ATC Costa Verde`, 14, h - 14);
+  }
+
+  // ---------------- topo / status ----------------
+  function refreshTop() {
+    $('score').textContent = game.score;
+    $('clockEl').textContent = game.clock() + 'Z';
+    $('windEl').textContent = game.windStr();
+    $('rankEl').textContent = game.rank();
+    $('statLanded').textContent = game.stats.landed;
+    $('statDeparted').textContent = game.stats.departed;
+    $('statGA').textContent = game.stats.goarounds;
+    $('statSep').textContent = game.stats.sepLoss;
+  }
+
+  function flashBanner(text, cls) {
+    const b = $('banner');
+    b.textContent = text;
+    b.className = 'show ' + (cls || '');
+    clearTimeout(flashBanner._t);
+    flashBanner._t = setTimeout(() => b.className = '', 3500);
+  }
+
+  function init(g) {
+    game = g;
+    if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = loadVoices;
+
+    // entrada de comandos
+    const input = $('cmdInput');
+    const history = [];
+    let hIdx = -1;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && input.value.trim()) {
+        game.runCommand(input.value);
+        history.unshift(input.value); if (history.length > 30) history.pop();
+        hIdx = -1;
+        input.value = '';
+      } else if (e.key === 'ArrowUp') { if (hIdx < history.length - 1) input.value = history[++hIdx]; e.preventDefault(); }
+      else if (e.key === 'ArrowDown') { if (hIdx > 0) input.value = history[--hIdx]; else { hIdx = -1; input.value = ''; } e.preventDefault(); }
+      else if (e.key === 'Escape') { input.value = ''; game.select(null); }
+    });
+    // seleção preenche o callsign
+    document.addEventListener('keydown', e => {
+      if (e.target === input) return;
+      if (e.key === 'p' || e.key === 'P') game.togglePause();
+      if (/^[a-zA-Z0-9]$/.test(e.key)) { input.focus(); }
+    });
+
+    $('btnCharts').onclick = openCharts;
+    $('btnHelp').onclick = () => $('helpModal').classList.remove('hidden');
+    document.querySelectorAll('.modal .close').forEach(b => b.onclick = () => b.closest('.modal').classList.add('hidden'));
+    document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); }));
+
+    $('btnPause').onclick = () => game.togglePause();
+    document.querySelectorAll('#speedBtns button').forEach(b => b.onclick = () => {
+      game.simSpeed = parseInt(b.dataset.s, 10);
+      document.querySelectorAll('#speedBtns button').forEach(x => x.classList.toggle('on', x === b));
+    });
+    $('btnSound').onclick = () => { game.settings.sound = !game.settings.sound; $('btnSound').classList.toggle('off', !game.settings.sound); if (!game.settings.sound) setAlarm(false); };
+    $('btnTts').onclick = () => { game.settings.tts = !game.settings.tts; $('btnTts').classList.toggle('off', !game.settings.tts); if (!game.settings.tts) speechSynthesis.cancel(); };
+    $('btnCenter').onclick = () => Radar.fitView();
+  }
+
+  return { init, logATC, logPilot, logSys, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts };
+})();
