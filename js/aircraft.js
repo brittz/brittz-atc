@@ -38,6 +38,7 @@ class Aircraft {
       goingAround: false,
       sidEngaged: opts.kind === 'arr', // saídas engatam a SID a 900 ft
       depHdg: null,                    // proa designada antes da decolagem
+      holdRwyHdg: false,               // manter proa de pista até a condicional
       pending: [],                     // instruções condicionais (APOS fixo/NM)
       trail: [], trailT: 0,
       stca: 0,                   // 0 ok, 1 previsto, 2 perda
@@ -250,10 +251,18 @@ class Aircraft {
       if (this.airborne) p.origin = [this.x, this.y];
       // no solo: origem definida quando a rolagem começar (checkPending)
     }
+    // condicional LATERAL dado antes da decolagem: mantém a proa de pista até
+    // disparar (a instrução do controle substitui a navegação da SID)
+    let extra = '';
+    const LATERAL = ['P', 'PROA', 'H', 'HDG', 'PE', 'PD', 'HL', 'HR', 'DIR', 'DCT', 'DIRETO'];
+    if (this.kind === 'dep' && this.onGround && LATERAL.includes(p.tokens[0])) {
+      this.holdRwyHdg = true;
+      extra = ', mantendo a proa de pista até lá';
+    }
     p.label = 'após ' + (p.fix ? p.fix + ' ' : '') + (p.dist ? p.dist + ' NM ' : '') + '→ ' + p.tokens.join(' ');
     this.pending.push(p);
     const when = (p.fix ? p.fix : '') + (p.fix && p.dist ? ', ' : '') + (p.dist ? p.dist + ' milhas' : '');
-    return { rb: 'Após ' + when + ', ' + p.tokens.join(' ') };
+    return { rb: 'Após ' + when + ', ' + p.tokens.join(' ') + extra };
   }
 
   checkPending(game) {
@@ -372,6 +381,10 @@ class Aircraft {
       this.sidEngaged = true;
       if (this.depHdg != null) {
         this.nav = { mode: 'hdg', hdg: this.depHdg, turn: null };
+      } else if (this.holdRwyHdg) {
+        // condicional lateral pendente: segue na proa de pista até disparar
+        const r = DATA.RUNWAYS[this.rwy];
+        this.nav = { mode: 'hdg', hdg: r ? r.hdg : this.hdg, turn: null };
       } else if (this.sid && DATA.SIDS[this.sid]) {
         this.nav = { mode: 'route', route: DATA.SIDS[this.sid].route.slice(), idx: 0 };
       }
