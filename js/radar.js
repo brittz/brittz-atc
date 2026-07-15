@@ -91,6 +91,7 @@ const Radar = (() => {
     }, { passive: false });
 
     cv.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
       mouse.down = true; mouse.moved = false; mouse.sx = e.offsetX; mouse.sy = e.offsetY;
     });
     cv.addEventListener('mouseleave', () => { mouse.inside = false; });
@@ -106,8 +107,15 @@ const Radar = (() => {
       }
     });
     cv.addEventListener('mouseup', e => {
+      if (e.button !== 0) return; // seleção/comandos apenas com o botão esquerdo
       mouse.down = false;
       if (!mouse.moved) handleTap(e.offsetX, e.offsetY);
+    });
+    // botão direito: desseleciona a aeronave atual
+    cv.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      mouse.down = false;
+      game.select(null);
     });
 
     // ----- toque (celular/tablet): 1 dedo = pan/tap, 2 dedos = pinch zoom -----
