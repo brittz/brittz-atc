@@ -382,6 +382,29 @@ const UI = (() => {
 
     // ATIS / METAR / pistas em uso
     $('atisBtn').onclick = () => { refreshAtisModal(); $('atisModal').classList.remove('hidden'); };
+
+    // tela cheia (desktop e Android/Chrome)
+    $('btnFull').onclick = () => {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      try {
+        if (!document.fullscreenElement && req) {
+          const p = req.call(el, { navigationUI: 'hide' });
+          if (p && p.catch) p.catch(() => logSys('Tela cheia indisponível neste navegador.', 'bad'));
+        } else if (document.fullscreenElement && exit) {
+          exit.call(document);
+        } else if (!req) {
+          logSys('Tela cheia indisponível neste navegador.', 'bad');
+        }
+      } catch (e) {
+        logSys('Tela cheia indisponível neste navegador.', 'bad');
+      }
+    };
+    document.addEventListener('fullscreenchange', () => {
+      $('btnFull').classList.toggle('on', !!document.fullscreenElement);
+      window.dispatchEvent(new Event('resize'));
+    });
   }
 
   function refreshAtisModal() {
