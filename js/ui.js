@@ -113,23 +113,46 @@ const UI = (() => {
   }
 
   // ---------------- strips ----------------
+  // Os elementos são REUTILIZADOS entre atualizações (reconciliação): destruir
+  // e recriar o DOM a cada refresh engolia cliques que estivessem em andamento.
+  const stripEls = new Map(); // callsign -> elemento
+  function syncChildren(box, desired) {
+    const current = [...box.children];
+    if (current.length === desired.length && current.every((c, i) => c === desired[i])) return;
+    desired.forEach(el => box.appendChild(el));
+  }
   function refreshStrips() {
     const arrBox = $('stripsArr'), depBox = $('stripsDep');
-    arrBox.innerHTML = ''; depBox.innerHTML = '';
+    const seen = new Set();
+    const order = { arr: [], dep: [] };
     let na = 0, nd = 0;
     for (const a of game.aircraft) {
       if (a.state === 'done') continue;
-      const el = document.createElement('div');
-      el.className = 'strip ' + a.kind + (game.selected === a ? ' sel' : '') +
+      seen.add(a.cs);
+      let el = stripEls.get(a.cs);
+      if (!el) {
+        el = document.createElement('div');
+        const cs = a.cs;
+        el.onclick = () => {
+          const ac = game.aircraft.find(x => x.cs === cs && x.state !== 'done');
+          if (ac) game.select(ac);
+        };
+        stripEls.set(a.cs, el);
+      }
+      const cls = 'strip ' + a.kind + (game.selected === a ? ' sel' : '') +
         (a.stca === 2 ? ' alert' : a.stca === 1 ? ' warn' : '') + (a.emergency ? ' emg' : '');
+      if (el.className !== cls) el.className = cls;
       const status = stripStatus(a);
       const proc = a.kind === 'arr' ? (a.star || '—') : (a.sid || '—');
-      el.innerHTML =
+      const html =
         `<div class="s1"><b>${a.cs}</b><span>${a.type}/${a.perf.wtc}</span><span>${a.kind === 'arr' ? '' : a.dest || ''}</span></div>` +
         `<div class="s2"><span>${proc}</span><span>${a.onGround ? '' : Math.round(a.alt / 100).toString().padStart(3, '0') + '↦' + Math.round(a.clrAlt / 100).toString().padStart(3, '0')}</span><span class="st">${status}</span></div>`;
-      el.onclick = () => game.select(a);
-      if (a.kind === 'arr') { arrBox.appendChild(el); na++; } else { depBox.appendChild(el); nd++; }
+      if (el._html !== html) { el._html = html; el.innerHTML = html; }
+      if (a.kind === 'arr') { order.arr.push(el); na++; } else { order.dep.push(el); nd++; }
     }
+    for (const [cs, el] of stripEls) if (!seen.has(cs)) { el.remove(); stripEls.delete(cs); }
+    syncChildren(arrBox, order.arr);
+    syncChildren(depBox, order.dep);
     $('countArr').textContent = na;
     $('countDep').textContent = nd;
   }
@@ -159,7 +182,8 @@ const UI = (() => {
     spd: { el: 'wSpd', min: 120, max: 340, step: 10, cmd: 'V', fmt: v => v + '' },
   };
   const wheelVals = { alt: 5000, hdg: 90, spd: 250 };
-  let wheelCs = null; // callsign para o qual as roletas foram inicializadas
+  let wheelCs = null;  // callsign para o qual as roletas foram inicializadas
+  let quickSig = '';   // assinatura do conjunto atual de botões rápidos
 
   function wheelDisplay() {
     for (const [k, w] of Object.entries(WHEELS))
@@ -219,7 +243,7 @@ const UI = (() => {
     const p = $('selPanel');
     const q = $('quickPanel');
     const a = game.selected;
-    if (!a || a.state === 'done') { p.classList.add('hidden'); q.classList.add('hidden'); wheelCs = null; return; }
+    if (!a || a.state === 'done') { p.classList.add('hidden'); q.classList.add('hidden'); wheelCs = null; quickSig = ''; return; }
     p.classList.remove('hidden');
     q.classList.remove('hidden');
     if (wheelCs !== a.cs) wheelInitFor(a);
@@ -235,15 +259,11 @@ const UI = (() => {
     $('selPend').innerHTML = (a.pending || []).map(p => '⏳ ' + p.label).join('<br>');
     $('selPend').style.display = (a.pending && a.pending.length) ? '' : 'none';
 
-    // ações contextuais (o ajuste fino de ALT/PROA/VEL fica nas roletas)
-    const qb = $('quickBtns');
-    qb.innerHTML = '';
-    const btn = (label, cmd, cls) => {
-      const b = document.createElement('button');
-      b.textContent = label; b.className = cls || '';
-      b.onclick = () => game.runCommand(a.cs + ' ' + cmd);
-      qb.appendChild(b);
-    };
+    // ações contextuais (o ajuste fino de ALT/PROA/VEL fica nas roletas).
+    // Os botões só são recriados quando o conjunto muda — recriar a cada
+    // refresh (400 ms) engolia cliques em andamento.
+    const items = [];
+    const btn = (label, cmd, cls) => items.push({ label, cmd, cls: cls || '' });
     const cfg = DATA.CONFIGS[game.cfg];
     if (a.state === 'holdshort') {
       btn('Alinhar ' + a.rwy, 'ALINHAR ' + a.rwy);
@@ -277,8 +297,21 @@ const UI = (() => {
       btn('V mín', 'V MIN', 'spd');
       btn('Vel. livre', 'V LIVRE', 'spd');
     }
-    // roletas: em voo sempre; no solo só para saídas (autorizações pré-decolagem)
-    $('wheelRow').style.display = (a.airborne || (a.kind === 'dep' && a.state !== 'rollout')) ? '' : 'none';
+    const wheelsOn = a.airborne || (a.kind === 'dep' && a.state !== 'rollout');
+    const sig = a.cs + '|' + items.map(i => i.label + '~' + i.cmd + '~' + i.cls).join(';') + '|' + wheelsOn;
+    if (sig !== quickSig) {
+      quickSig = sig;
+      const qb = $('quickBtns');
+      qb.innerHTML = '';
+      for (const it of items) {
+        const b = document.createElement('button');
+        b.textContent = it.label; b.className = it.cls;
+        b.onclick = () => game.runCommand(a.cs + ' ' + it.cmd);
+        qb.appendChild(b);
+      }
+      // roletas: em voo sempre; no solo só para saídas (autorizações pré-decolagem)
+      $('wheelRow').style.display = wheelsOn ? '' : 'none';
+    }
   }
 
   // ---------------- cartas ----------------
