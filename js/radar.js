@@ -327,8 +327,9 @@ const Radar = (() => {
     if (a.stca === 2) col = (Math.floor(performance.now() / 300) % 2) ? C.alert : '#7a1020';
     if (a.emergency) col = (Math.floor(performance.now() / 500) % 2) ? C.alert : col;
 
-    // linha de histórico da rota (opcional, nas configurações)
-    if (game.settings.trailLine && a.path && a.path.length > 1) {
+    // linha de histórico da rota (opcional; só da aeronave selecionada,
+    // para não poluir o radar)
+    if (game.settings.trailLine && sel && a.path && a.path.length > 1) {
       ctx.save();
       ctx.strokeStyle = C.trail; ctx.globalAlpha = 0.3; ctx.lineWidth = 1;
       ctx.beginPath();
