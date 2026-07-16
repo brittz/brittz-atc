@@ -38,6 +38,8 @@ class Aircraft {
       goingAround: false,
       sidEngaged: opts.kind === 'arr', // saídas engatam a SID a 900 ft
       depHdg: null,                    // proa designada antes da decolagem
+      depDct: null,                    // direto designado antes da decolagem
+      altAssigned: false,              // altitude explícita antes da decolagem
       holdRwyHdg: false,               // manter proa de pista até a condicional
       pending: [],                     // instruções condicionais (APOS fixo/NM/pés)
       spdMode: null,                   // null | 'min' | 'max' (a critério do comandante)
@@ -93,8 +95,8 @@ class Aircraft {
     // autorização de subida dada ainda no solo (aplicada após a decolagem)
     if (this.onGround) {
       if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
-      if (alt < 3000) return { err: 'subida inicial mínima de 3.000 pés' };
       this.clrAlt = alt;
+      this.altAssigned = true; // restrição explícita: não aplicar o padrão de 5.000 ft
       return { rb: 'Após a decolagem, subindo para ' + U.fmtAlt(alt) };
     }
     const dir = alt < this.alt - 100 ? 'Descendo para ' : alt > this.alt + 100 ? 'Subindo para ' : 'Mantendo ';
@@ -129,8 +131,13 @@ class Aircraft {
     return { rb: t + U.fmtHdg(hdg) };
   }
   cmdDirect(fixName) {
-    if (!this.airborne) return { err: 'ainda no solo' };
     if (!U.fix(fixName)) return { err: 'fixo desconhecido' };
+    // direto designado ainda no solo: substitui a SID após a decolagem (900 ft)
+    if (!this.airborne) {
+      if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
+      this.depDct = fixName;
+      return { rb: 'Após a decolagem, direto ' + fixName };
+    }
     this.cancelApproach();
     this.sidEngaged = true;
     // se o fixo está na rota atual, pula para ele mantendo o resto
@@ -157,6 +164,7 @@ class Aircraft {
       if (!sid) return { err: 'não temos SID designada' };
       const top = sid.top || 15000;
       this.clrAlt = top;
+      this.altAssigned = true;
       // em voo e vetorado: subir via SID inclui retomar a navegação da carta
       if (this.airborne && this.nav.mode !== 'route') {
         const join = this.nearestOf(sid.route);
@@ -430,7 +438,8 @@ class Aircraft {
       if (this.spd >= this.perf.vr) {
         this.state = 'air';
         this.alt = 50; this.vs = this.perf.climb;
-        this.clrAlt = Math.max(this.clrAlt, 5000);
+        // subida inicial padrão de 5.000 ft SÓ quando o controle não impôs restrição
+        if (!this.altAssigned) this.clrAlt = Math.max(this.clrAlt, 5000);
         this.clrSpd = 0;
         this.nav = { mode: 'hdg', hdg: DATA.RUNWAYS[this.rwy].hdg, turn: null };
       }
@@ -468,6 +477,15 @@ class Aircraft {
       this.sidEngaged = true;
       if (this.depHdg != null) {
         this.nav = { mode: 'hdg', hdg: this.depHdg, turn: null };
+      } else if (this.depDct) {
+        // direto dado antes da decolagem; se o fixo pertence à SID, retoma a carta
+        const sid = this.sid && DATA.SIDS[this.sid];
+        let route = [this.depDct];
+        if (sid) {
+          const i = sid.route.indexOf(this.depDct);
+          if (i >= 0) route = sid.route.slice(i);
+        }
+        this.nav = { mode: 'route', route, idx: 0 };
       } else if (this.holdRwyHdg) {
         // condicional lateral pendente: segue na proa de pista até disparar
         const r = DATA.RUNWAYS[this.rwy];

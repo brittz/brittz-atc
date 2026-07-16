@@ -161,7 +161,8 @@ const Commands = (() => {
 
       results.push(r);
       i += used;
-      if (r && r.err) break; // para no primeiro erro
+      // um erro não descarta o resto da linha: o piloto cumpre o que puder
+      // e responde "Negativo" ao que não puder
     }
 
     return { results, atcParts };
@@ -207,9 +208,9 @@ const Commands = (() => {
     }
 
     const { results, atcParts } = immediate.length ? run(ac, immediate, game) : { results: [], atcParts: [] };
-    const hadErr = results.some(r => r && r.err);
 
-    if (cond && !hadErr) {
+    // a condicional é armada mesmo se alguma instrução imediata foi recusada
+    if (cond) {
       const v = ac.addPending(cond);
       results.push(v);
       if (!v.err) {
