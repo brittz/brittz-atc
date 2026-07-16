@@ -36,9 +36,10 @@ class Aircraft {
       landClr: false,
       rwy: null,                 // pista em uso (decolagem/pouso)
       goingAround: false,
-      sidEngaged: opts.kind === 'arr', // saídas engatam a SID a 900 ft
+      sidEngaged: opts.kind === 'arr', // instrução lateral pós-decolagem definida
       depHdg: null,                    // proa designada antes da decolagem
       depDct: null,                    // direto designado antes da decolagem
+      depViaSid: false,                // "subir via SID": segue a carta após decolar
       altAssigned: false,              // altitude explícita antes da decolagem
       holdRwyHdg: false,               // manter proa de pista até a condicional
       pending: [],                     // instruções condicionais (APOS fixo/NM/pés)
@@ -172,6 +173,8 @@ class Aircraft {
         this.nav = { mode: 'route', route: sid.route.slice(sid.route.indexOf(join)), idx: 0 };
         return { rb: 'Subir via SID ' + this.sid + ' para ' + U.fmtAlt(top) + ', direto ' + join };
       }
+      // no solo: autoriza a navegação da carta após a decolagem
+      this.depViaSid = true;
       return { rb: 'Subir via SID ' + this.sid + ' para ' + U.fmtAlt(top) };
     }
     // chegada: "descer via STAR" — cumpre as restrições da carta
@@ -472,7 +475,9 @@ class Aircraft {
 
     // ------- em voo -------
     this.checkPending(game);
-    // saída: aos 900 ft engata a SID (ou a proa dada antes da decolagem)
+    // saída aos 900 ft: aplica a instrução lateral dada antes da decolagem.
+    // Sem instrução (DEC simples), MANTÉM A PROA DE PISTA aguardando o
+    // controle — a SID só é seguida com "subir via SID" (VIA) ou vetores.
     if (this.kind === 'dep' && !this.sidEngaged && this.alt > 900) {
       this.sidEngaged = true;
       if (this.depHdg != null) {
@@ -486,13 +491,10 @@ class Aircraft {
           if (i >= 0) route = sid.route.slice(i);
         }
         this.nav = { mode: 'route', route, idx: 0 };
-      } else if (this.holdRwyHdg) {
-        // condicional lateral pendente: segue na proa de pista até disparar
-        const r = DATA.RUNWAYS[this.rwy];
-        this.nav = { mode: 'hdg', hdg: r ? r.hdg : this.hdg, turn: null };
-      } else if (this.sid && DATA.SIDS[this.sid]) {
+      } else if (this.depViaSid && this.sid && DATA.SIDS[this.sid]) {
         this.nav = { mode: 'route', route: DATA.SIDS[this.sid].route.slice(), idx: 0 };
       }
+      // senão: segue na proa de pista (nav já é a proa da decolagem)
     }
     this.updateLateral(dt, game);
     this.updateVertical(dt);

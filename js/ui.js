@@ -385,7 +385,7 @@ const UI = (() => {
     ctx.font = '11px Georgia, serif';
     ctx.fillText(kind === 'star'
       ? 'Chegada padrão por instrumentos · Restrições: cruzar NO fixo na altitude/velocidade indicadas ("descer via")'
-      : 'Saída padrão · Proa de pista até 900 ft AGL, então navega pelos fixos · Subida inicial 5.000 ft', 14, 38);
+      : 'Saída padrão · Com "subir via SID": proa de pista até 900 ft AGL, então navega pelos fixos até o teto da carta', 14, 38);
     ctx.strokeStyle = '#1a1a2e'; ctx.strokeRect(6, 6, w - 12, h - 12);
 
     // aeroporto: pistas conforme o JSON carregado
