@@ -127,6 +127,7 @@ class Aircraft {
     }
     this.cancelApproach();
     this.sidEngaged = true;
+    if (this.kind === 'hel') this.heliAuto = false; // controlador assume a navegação
     this.nav = { mode: 'hdg', hdg: U.norm360(hdg), turn: turn || null };
     const t = turn === 'L' ? 'Curva à esquerda, proa ' : turn === 'R' ? 'Curva à direita, proa ' : 'Proa ';
     return { rb: t + U.fmtHdg(hdg) };
@@ -141,6 +142,7 @@ class Aircraft {
     }
     this.cancelApproach();
     this.sidEngaged = true;
+    if (this.kind === 'hel') this.heliAuto = false;
     // se o fixo está na rota atual, pula para ele mantendo o resto
     if (this.nav.mode === 'route') {
       const i = this.nav.route.indexOf(fixName, this.nav.idx);
@@ -293,6 +295,16 @@ class Aircraft {
     this.nav = { mode: 'route', route: fixes.slice(fixes.indexOf(join)), idx: 0 };
     return { rb: 'Chegada ' + name + ', direto ' + join };
   }
+  // autorização de cruzamento da zona do aeródromo (helicópteros VFR)
+  cmdCross() {
+    if (this.kind !== 'hel') return { err: 'não somos tráfego de cruzamento' };
+    if (this.crossCleared) return { err: 'já autorizados a cruzar' };
+    this.crossCleared = true;
+    this.heliAuto = true;
+    if (this.heliState === 'waiting') this.heliState = 'crossing';
+    return { rb: 'Autorizado cruzamento da zona do aeródromo, prosseguindo' };
+  }
+
   // transferência para o Centro (apenas saídas, perto do fim da SID e alto)
   cmdHandoff(game) {
     if (this.kind === 'arr') return { err: 'somos uma chegada — seguimos com você até o pouso' };
@@ -475,6 +487,7 @@ class Aircraft {
 
     // ------- em voo -------
     this.checkPending(game);
+    if (this.kind === 'hel') this.updateHeli(dt, game);
     // saída aos 900 ft: aplica a instrução lateral dada antes da decolagem.
     // Sem instrução (DEC simples), MANTÉM A PROA DE PISTA aguardando o
     // controle — a SID só é seguida com "subir via SID" (VIA) ou vetores.
@@ -514,6 +527,45 @@ class Aircraft {
       this.pathT = 0;
       this.path.push([this.x, this.y]);
       if (this.path.length > 240) this.path.shift();
+    }
+  }
+
+  // ---- helicóptero VFR cruzando a zona do aeródromo (raio 5 NM) ----
+  // reporta na aproximação e, sem autorização, paira no limite da zona
+  updateHeli(dt, game) {
+    if (!this.heliAuto) return; // o controlador assumiu com vetores
+    const ZONE = 5;
+    const d = U.dist(0, 0, this.x, this.y);
+    const toExit = () => {
+      this.nav = { mode: 'hdg', hdg: U.brg(this.x, this.y, this.wptExit[0], this.wptExit[1]), turn: null };
+    };
+    if (this.heliState === 'inbound') {
+      toExit();
+      if (!this.crossRequested && d < 9) {
+        this.crossRequested = true;
+        game.radioPilot(this, `helicóptero a ${Math.round(d)} milhas do aeródromo, ` +
+          `${U.fmtAlt(Math.round(this.alt))}, solicitamos cruzamento da zona`);
+      }
+      if (d <= ZONE + 0.2) {
+        if (this.crossCleared) this.heliState = 'crossing';
+        else {
+          this.heliState = 'waiting';
+          game.radioPilot(this, 'mantendo posição fora da zona, aguardando autorização de cruzamento');
+        }
+      }
+    } else if (this.heliState === 'waiting') {
+      if (this.crossCleared) this.heliState = 'crossing';
+      // pairando: a velocidade-alvo vira zero em updateSpeed
+    } else if (this.heliState === 'crossing') {
+      toExit();
+      if (d < ZONE) this.zoneEntered = true;
+      if (this.zoneEntered && d > ZONE + 0.5) {
+        this.heliState = 'clear';
+        game.onHeliCrossed(this);
+      }
+    } else if (this.heliState === 'clear') {
+      toExit();
+      if (U.dist(this.x, this.y, this.wptExit[0], this.wptExit[1]) < 2 || d > 26) this.state = 'done';
     }
   }
 
@@ -644,6 +696,11 @@ class Aircraft {
     let target = this.clrSpd > 0 ? this.clrSpd : this.defaultSpd();
     if (this.spdMode === 'min') target = this.minSpdNow();
     if (this.spdMode === 'max') target = this.perf.max;
+    // helicóptero sem autorização: reduz chegando perto da zona e paira no limite
+    if (this.kind === 'hel' && this.heliAuto && !this.crossCleared) {
+      if (this.heliState === 'waiting') target = 0;
+      else if (this.heliState === 'inbound' && U.dist(0, 0, this.x, this.y) < 8) target = Math.min(target, 60);
+    }
     // regra dos 250 kt abaixo de 10.000 ft
     if (this.alt < 10000) target = Math.min(target, 250);
     // restrições de velocidade da carta quando "via"
@@ -665,12 +722,14 @@ class Aircraft {
   }
 
   minSpdNow() {
+    if (this.perf.heli) return this.heliState === 'waiting' ? 0 : 40;
     if (this.app.phase === 'gs') return this.perf.app;
     if (this.alt < 6000) return this.perf.min + 25;
     return this.perf.min + 45;
   }
 
   defaultSpd() {
+    if (this.perf.heli) return Math.min(this.perf.max, 110);
     if (this.kind === 'dep') return Math.min(this.perf.max, 300);
     if (this.alt > 11000) return 280;
     if (this.alt > 7000) return 230;

@@ -143,12 +143,13 @@ const UI = (() => {
         (a.stca === 2 ? ' alert' : a.stca === 1 ? ' warn' : '') + (a.emergency ? ' emg' : '');
       if (el.className !== cls) el.className = cls;
       const status = stripStatus(a);
-      const proc = a.kind === 'arr' ? (a.star || '—') : (a.sid || '—');
+      const proc = a.kind === 'arr' ? (a.star || '—') : a.kind === 'hel' ? 'VFR' : (a.sid || '—');
       const html =
         `<div class="s1"><b>${a.cs}</b><span>${a.type}/${a.perf.wtc}</span><span>${a.kind === 'arr' ? '' : a.dest || ''}</span></div>` +
         `<div class="s2"><span>${proc}</span><span>${a.onGround ? '' : Math.round(a.alt / 100).toString().padStart(3, '0') + '↦' + Math.round(a.clrAlt / 100).toString().padStart(3, '0')}</span><span class="st">${status}</span></div>`;
       if (el._html !== html) { el._html = html; el.innerHTML = html; }
-      if (a.kind === 'arr') { order.arr.push(el); na++; } else { order.dep.push(el); nd++; }
+      // helicópteros entram na lista de chegadas (tráfego que chama você)
+      if (a.kind === 'dep') { order.dep.push(el); nd++; } else { order.arr.push(el); na++; }
     }
     for (const [cs, el] of stripEls) if (!seen.has(cs)) { el.remove(); stripEls.delete(cs); }
     syncChildren(arrBox, order.arr);
@@ -158,6 +159,11 @@ const UI = (() => {
   }
 
   function stripStatus(a) {
+    if (a.kind === 'hel') {
+      if (!a.heliAuto) return 'VETOR';
+      return { inbound: a.crossRequested ? 'PEDE CRZ' : 'VFR', waiting: 'AGUARDA CRZ',
+               crossing: 'CRUZANDO', clear: 'DEIXANDO' }[a.heliState] || 'VFR';
+    }
     if (a.state === 'taxi') return 'TÁXI ' + Math.ceil(a.timer) + 's';
     if (a.state === 'holdshort') return 'PRONTO ' + a.rwy;
     if (a.state === 'lineup') return 'ALINHADO';
@@ -273,7 +279,9 @@ const UI = (() => {
     else wheelSync(a);
     $('selCs').textContent = a.cs + (a.emergency ? ' ⚠ EMERGÊNCIA' : '');
     $('selInfo').textContent =
-      `${a.type}/${a.perf.wtc} · ${a.kind === 'arr' ? 'Chegada ' + (a.star || '') : 'Saída ' + (a.sid || '') + (a.dest ? ' → ' + a.dest : '')}`;
+      `${a.type}/${a.perf.wtc} · ` + (a.kind === 'arr' ? 'Chegada ' + (a.star || '')
+        : a.kind === 'hel' ? 'Helicóptero VFR — cruzamento da zona'
+        : 'Saída ' + (a.sid || '') + (a.dest ? ' → ' + a.dest : ''));
     let nextFix = '';
     if (a.airborne && a.nav.mode === 'route' && a.nav.route[a.nav.idx])
       nextFix = ` · →${a.nav.route[a.nav.idx]} ${a.fixDist(a.nav.route[a.nav.idx]).toFixed(1)} NM`;
@@ -315,6 +323,8 @@ const UI = (() => {
           btn('Autorizar pouso', 'AP', 'good');
           btn('Arremeter', 'ARR', 'bad');
         } else btn('Arremeter', 'ARR', 'bad');
+      } else if (a.kind === 'hel') {
+        if (!a.crossCleared) btn('Autorizar cruzamento', 'CRZ', 'good');
       } else {
         btn('Transferir ao Centro', 'HO', 'good');
       }

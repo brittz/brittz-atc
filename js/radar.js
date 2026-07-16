@@ -14,7 +14,7 @@ const Radar = (() => {
   const C = {
     bg: '#070d12', ring: '#12303a', ringTxt: '#2a5563', boundary: '#1d4a58',
     fix: '#33606e', fixTxt: '#4d8496', rwy: '#c8d8dc', ctrline: '#25505c',
-    arr: '#5fd7ff', dep: '#7dff9f', sel: '#ffe066', warn: '#ffb454', alert: '#ff4d5e',
+    arr: '#5fd7ff', dep: '#7dff9f', hel: '#d4a7ff', sel: '#ffe066', warn: '#ffb454', alert: '#ff4d5e',
     trail: '#3a7a8a', route: '#2f6ea0', loc: '#3d8f5f', hold: '#8a7adf',
   };
 
@@ -225,6 +225,12 @@ const Radar = (() => {
     ctx.setLineDash([]);
     ctx.fillStyle = C.boundary;
     ctx.fillText('LIMITE TMA ' + DATA.AIRPORT.range + ' NM', ox + 6, oy - DATA.AIRPORT.range * scale + 14);
+    // zona do aeródromo (5 NM): helicópteros precisam de autorização para cruzar
+    ctx.strokeStyle = '#3a2f55'; ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.arc(ox, oy, 5 * scale, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#5c4a85';
+    ctx.fillText('ATZ 5', ox + 5 * scale * 0.71 + 4, oy - 5 * scale * 0.71);
   }
 
   function drawSweep(dt) {
@@ -322,7 +328,7 @@ const Radar = (() => {
   function drawAircraft(a) {
     const [sx, sy] = toScreen(a.x, a.y);
     const sel = game.selected === a;
-    let col = a.kind === 'arr' ? C.arr : C.dep;
+    let col = a.kind === 'arr' ? C.arr : a.kind === 'hel' ? C.hel : C.dep;
     if (a.stca === 1) col = C.warn;
     if (a.stca === 2) col = (Math.floor(performance.now() / 300) % 2) ? C.alert : '#7a1020';
     if (a.emergency) col = (Math.floor(performance.now() / 500) % 2) ? C.alert : col;
@@ -384,6 +390,11 @@ const Radar = (() => {
     else if (a.via) l3 = 'VIA ' + a.star;
     else if (a.nav.mode === 'route' && a.nav.route[a.nav.idx]) l3 = '→' + a.nav.route[a.nav.idx];
     else if (a.nav.mode === 'hdg' && a.airborne) l3 = 'PROA ' + U.fmtHdg(a.nav.hdg);
+    if (a.kind === 'hel') {
+      l3 = { inbound: a.crossRequested ? 'PEDE CRZ' : 'VFR', waiting: 'AGUARDA CRZ',
+             crossing: 'CRUZANDO', clear: 'DEIXANDO' }[a.heliState] || l3;
+      if (!a.heliAuto) l3 = 'VETOR';
+    }
     if (a.state === 'holdshort') l3 = 'PRONTO ' + a.rwy;
     if (a.state === 'lineup') l3 = 'ALINHADO ' + a.rwy;
     if (a.state === 'takeoff') l3 = 'ROLANDO ' + a.rwy;

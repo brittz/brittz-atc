@@ -16,7 +16,7 @@ const game = {
   settings: { sound: true, tts: true, sweep: true, fixNames: true, trailLine: false },
   stats: { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 },
   usedCs: new Set(),
-  nextArr: 10, nextDep: 20,
+  nextArr: 10, nextDep: 20, nextHeli: 150,
   pendingRadio: [],    // mensagens de piloto com atraso
   sepPairs: new Map(), // pares em perda de separação: key -> {t, next}
   conflictPairs: [],   // pares em alerta (para desenhar no radar)
@@ -263,6 +263,47 @@ const game = {
     this.aircraft.push(ac);
   },
 
+  // helicóptero VFR que cruzará a zona do aeródromo (raio 5 NM)
+  spawnHeli() {
+    const th = U.rnd(0, 360);
+    const R0 = 22;
+    const ex = Math.sin(U.d2r(th)) * R0, ey = Math.cos(U.d2r(th)) * R0;
+    // saída do outro lado, com desvio para a rota passar perto do aeródromo
+    const thOut = U.norm360(th + 180 + U.rnd(-20, 20));
+    const wptExit = [Math.sin(U.d2r(thOut)) * R0, Math.cos(U.d2r(thOut)) * R0];
+    const type = U.pick(['H125', 'R44', 'AW39']);
+    const L = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    const cs = 'PR-' + L() + L() + L();
+    const ac = new Aircraft({
+      cs, radio: 'Helicóptero ' + cs.replace('-', ' '), type,
+      kind: 'hel', x: ex, y: ey,
+      alt: U.pick([1500, 2000, 2500, 3000]), spd: 100,
+      hdg: U.brg(ex, ey, wptExit[0], wptExit[1]),
+      spawnT: this.time,
+    });
+    ac.clrAlt = ac.alt;
+    ac.wptExit = wptExit;
+    ac.heliAuto = true;
+    ac.heliState = 'inbound';
+    ac.crossRequested = false;
+    ac.crossCleared = false;
+    ac.zoneEntered = false;
+    this.usedCs.add(cs);
+    this.aircraft.push(ac);
+    this.radioPilot(ac, `boa tarde, helicóptero ${type} VFR, ${Math.round(U.dist(0, 0, ex, ey))} milhas ao ` +
+      `${this.cardinal(th + 180)}, ${U.fmtAlt(ac.alt)}, vamos cruzar a zona do aeródromo`, 0.4);
+  },
+
+  cardinal(brg) {
+    const dirs = ['norte', 'nordeste', 'leste', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
+    return dirs[Math.round(U.norm360(brg) / 45) % 8];
+  },
+
+  onHeliCrossed(ac) {
+    this.addScore(50, ac.cs + ' cruzou a zona coordenado');
+    this.radioPilot(ac, 'cruzamento concluído, obrigado, bom serviço', 1);
+  },
+
   // ---------- pista ----------
   runwayOccupied(rwy, except) {
     const pair = DATA.RWY_PAIR[rwy];
@@ -385,6 +426,8 @@ const game = {
           this.radioPilot(ac, 'chamando o Centro, obrigado, até logo', 0.3);
           this.completeHandoff(ac, false);
         }
+      } else if (ac.kind === 'hel') {
+        if (d > DATA.AIRPORT.range - 20) ac.state = 'done'; // deixou a área baixa
       } else if (d > DATA.AIRPORT.range + 3 && !ac.offRadarPenalized) {
         ac.offRadarPenalized = true;
         ac.state = 'done';
@@ -415,12 +458,14 @@ const game = {
       }
 
       // spawns
-      this.nextArr -= h; this.nextDep -= h;
+      this.nextArr -= h; this.nextDep -= h; this.nextHeli -= h;
       const [ra, rd] = this.trafficRates();
       const arrCount = this.aircraft.filter(a => a.kind === 'arr' && a.state !== 'done').length;
       const depCount = this.aircraft.filter(a => a.kind === 'dep' && a.state !== 'done').length;
+      const helCount = this.aircraft.filter(a => a.kind === 'hel' && a.state !== 'done').length;
       if (this.nextArr <= 0) { if (arrCount < 9) this.spawnArrival(); this.nextArr = U.rnd(ra * 0.7, ra * 1.3); }
       if (this.nextDep <= 0) { if (depCount < 7) this.spawnDeparture(); this.nextDep = U.rnd(rd * 0.7, rd * 1.3); }
+      if (this.nextHeli <= 0) { if (helCount < 2) this.spawnHeli(); this.nextHeli = U.rnd(240, 480); }
     }
 
     this.checkConflicts(dt);
@@ -467,6 +512,7 @@ const game = {
     this.spawnArrival();
     this.nextArr = U.rnd(20, 35);
     this.nextDep = U.rnd(8, 15);
+    this.nextHeli = U.rnd(120, 260);
     this.spawnDeparture();
     if (!UI.isTouch) document.getElementById('cmdInput').focus();
   },

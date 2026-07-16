@@ -15,7 +15,7 @@ const Commands = (() => {
     'DIR','DCT','DIRETO','VIA','ILS','AP','POUSO','CTL',
     'ALINHAR','LU','DEC','TO','CTO','DECOLAR','TAKEOFF','TKFF','TKOF',
     'ESPERA','HOLD','ARR','GA','ARREMETER','SID','STAR','HO','TRANSFERIR','TRF',
-    'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR',
+    'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR','CRZ','CRUZAR','CROSS','CRUZAMENTO',
   ]);
 
   // encontra a aeronave pelo callsign completo ou sufixo único
@@ -152,6 +152,11 @@ const Commands = (() => {
           if (!arg) { r = { err: 'informe a cabeceira (ex.: TAXI 27L)' }; used = 1; break; }
           r = ac.cmdTaxi(arg);
           if (!r.err) atcParts.push('taxie para a cabeceira ' + arg);
+          break;
+        }
+        case 'CRZ': case 'CRUZAR': case 'CROSS': case 'CRUZAMENTO': {
+          r = ac.cmdCross(); used = 1;
+          if (!r.err) atcParts.push('autorizado cruzamento da zona do aeródromo, reporte deixando');
           break;
         }
         default:

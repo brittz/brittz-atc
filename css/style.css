@@ -154,6 +154,8 @@ button.primary:hover { background: #1a5a42; }
   border-left: 3px solid var(--arr);
 }
 .strip.dep { border-left-color: var(--dep); }
+.strip.hel { border-left-color: #d4a7ff; }
+.strip.hel .st { color: #d4a7ff; }
 .strip:hover { background: #11202c; }
 .strip.sel { background: #1c2c1a; border-left-color: var(--sel); }
 .strip.warn { background: #2a2010; }

@@ -18,6 +18,10 @@ const DATA = {
     AT76: { climb: 1350, desc: 1500, accel: 1.1, vr: 115, app: 113, min: 105, max: 270, wtc: 'M' },
     B77W: { climb: 1900, desc: 1800, accel: 1.2, vr: 155, app: 145, min: 135, max: 350, wtc: 'H' },
     B789: { climb: 2000, desc: 1900, accel: 1.2, vr: 150, app: 142, min: 132, max: 350, wtc: 'H' },
+    // helicópteros (VFR, podem pairar)
+    H125: { climb: 1200, desc: 1000, accel: 2.0, vr: 0, app: 60, min: 0, max: 130, wtc: 'L', heli: true },
+    R44:  { climb:  900, desc:  800, accel: 1.8, vr: 0, app: 55, min: 0, max: 110, wtc: 'L', heli: true },
+    AW39: { climb: 1500, desc: 1200, accel: 2.2, vr: 0, app: 70, min: 0, max: 150, wtc: 'L', heli: true },
   },
 
   // companhias: prefixo, nome rádio, tipos que operam, peso p/ sorteio
