@@ -1,25 +1,115 @@
 // ============================================================
-// Núcleo do jogo: loop, tráfego, conflitos, pontuação
+// Adaptador single-player: liga o GameCore (motor) ao DOM/UI.
+// A simulação vive no core (engine/core.js); aqui ficam seleção, pausa,
+// velocidade, localStorage, bootstrap e a facade `game` que radar.js/ui.js
+// já consomem (mesmos nomes de sempre, agora delegando ao core).
 // ============================================================
 'use strict';
 
+let core = null;             // instância de GameCore da partida atual
+let airportJson = null;      // JSON do aeroporto carregado (p/ criar o core)
+
+// traduz os eventos do core em efeitos de UI (o que antes eram chamadas UI.* diretas)
+function handleEmit(ev) {
+  switch (ev.type) {
+    case 'radio':
+      if (ev.who === 'atc') UI.logATC(ev.text);
+      else if (ev.who === 'pilot') UI.logPilot(ev.ac, ev.text);
+      else UI.logSys(ev.text, ev.cls || '');
+      break;
+    case 'score':
+      UI.logSys((ev.delta >= 0 ? '+' : '') + ev.delta + ' pts — ' + ev.why, ev.delta >= 0 ? 'good' : 'bad');
+      if (ev.delta < 0) UI.flashBanner(ev.why + ' (' + ev.delta + ' pts)', 'bad');
+      if (ev.delta > 0) game.saveRecordIfBest();
+      break;
+    case 'banner': UI.flashBanner(ev.text, ev.cls || ''); break;
+    case 'chime': UI.chime(); break;
+    case 'alarm': UI.setAlarm(ev.on); break;
+    case 'atis':
+      UI.logSys('Informação ATIS ' + ev.letter + ' disponível' + (ev.extra ? ' — ' + ev.extra : '') + ': ' + ev.metar);
+      break;
+    case 'config':
+      document.getElementById('cfgLabel').textContent = ev.label;
+      break;
+  }
+}
+
 const game = {
-  aircraft: [],
+  // ---------- estado do CLIENTE (fora do core) ----------
   selected: null,
-  score: 0,
-  time: 0,             // segundos de simulação
-  simSpeed: 1,
+  _simSpeed: 1,
   paused: false,
-  started: false,
-  cfg: '09',
-  traffic: 'normal',   // calmo | normal | pico
   settings: { sound: true, tts: true, sweep: true, fixNames: true, trailLine: false },
-  stats: { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 },
-  usedCs: new Set(),
-  nextArr: 10, nextDep: 20, nextHeli: 150,
-  pendingRadio: [],    // mensagens de piloto com atraso
-  sepPairs: new Map(), // pares em perda de separação: key -> {t, next}
-  conflictPairs: [],   // pares em alerta (para desenhar no radar)
+  airportJson: null,
+
+  // velocidade de simulação: no multiplayer o tempo é do servidor
+  get simSpeed() { return this._simSpeed; },
+  set simSpeed(v) {
+    if (Net.active) { UI.logSys('Tempo controlado pelo servidor no multiplayer'); return; }
+    this._simSpeed = v;
+  },
+
+  // ---------- espelhos do core (só leitura) — no MP, espelhos do Net ----------
+  get aircraft() { return Net.active ? Net.aircraft : (core ? core.aircraft : []); },
+  get started() { return Net.active ? true : (core ? core.started : false); },
+  get cfg() { return Net.active ? (Net.cfg || '09') : (core ? core.cfg : '09'); },
+  get score() { return Net.active ? Net.score : (core ? core.score : 0); },
+  get stats() { return Net.active ? Net.stats : (core ? core.stats : { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 }); },
+  get time() { return Net.active ? Net.time : (core ? core.time : 0); },
+  get conflictPairs() { return Net.active ? [] : (core ? core.conflictPairs : []); },
+
+  clock() {
+    if (Net.active) { // mesmo relógio do core: turno começa 13:20:00Z
+      const base = 13 * 3600 + 20 * 60;
+      const t = base + Math.floor(Net.time);
+      const h = Math.floor(t / 3600) % 24, m = Math.floor(t / 60) % 60, s = t % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    return core ? core.clock() : '13:20:00';
+  },
+  windStr() {
+    if (Net.active) {
+      const w = Net.weather;
+      if (!w || w.dir == null) return '—';
+      return `${U.fmtHdg(w.dir)}°/${Math.round(w.spd)}kt`;
+    }
+    return core ? core.windStr() : '—';
+  },
+  metar() {
+    if (Net.active) { // mesmo formato do core, a partir dos espelhos
+      const w = Net.weather;
+      if (!w || w.dir == null) return '—';
+      const hhmm = this.clock().slice(0, 5).replace(':', '');
+      let ddd = Math.round(w.dir / 10) * 10;
+      if (ddd === 0) ddd = 360;
+      const dew = w.temp - 7;
+      return `METAR ${DATA.AIRPORT.icao} 14${hhmm}Z ${String(ddd).padStart(3, '0')}${String(Math.round(w.spd)).padStart(2, '0')}KT 9999 FEW025 SCT080 ${w.temp}/${dew} Q${w.qnh}`;
+    }
+    return core ? core.metar() : '—';
+  },
+  atisLetter() { return Net.active ? Net.atis : (core ? core.atisLetter() : 'A'); },
+  tailwind(k) {
+    if (Net.active) {
+      const w = Net.weather, cfg = DATA.CONFIGS[k || this.cfg];
+      if (!w || w.dir == null || !cfg) return 0;
+      const r = DATA.RUNWAYS[cfg.arrRwy];
+      return -w.spd * Math.cos(U.d2r(w.dir - r.hdg));
+    }
+    return core ? core.tailwind(k) : 0;
+  },
+  setConfig(k) {
+    if (Net.active) { UI.logSys('Troca de pistas em uso disponível apenas no single-player'); return; }
+    if (core) core.setConfig(k);
+  },
+
+  rank() {
+    const s = this.score;
+    if (s < 300) return 'Estagiário';
+    if (s < 800) return 'Controlador Jr.';
+    if (s < 1600) return 'Controlador';
+    if (s < 3000) return 'Controlador Sênior';
+    return 'Supervisor de TMA';
+  },
 
   // ---------- persistência local (localStorage) ----------
   loadPrefs() {
@@ -43,452 +133,77 @@ const game = {
     }
   },
 
-  // ---------- utilidades ----------
-  clock() {
-    const base = 13 * 3600 + 20 * 60; // 13:20Z início do turno
-    const t = base + Math.floor(this.time);
-    const h = Math.floor(t / 3600) % 24, m = Math.floor(t / 60) % 60, s = t % 60;
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  },
-  windStr() {
-    const w = this.weather || (DATA.CONFIGS[this.cfg] && DATA.CONFIGS[this.cfg].wind);
-    if (!w) return '—';
-    return `${U.fmtHdg(w.dir)}°/${Math.round(w.spd)}kt`;
-  },
-
-  // ---------- meteorologia dinâmica ----------
-  weather: null, atisIdx: 0, wxMin: 0, metarT: 0, windEvent: null,
-
-  initWeather() {
-    const w = DATA.CONFIGS[this.cfg].wind;
-    this.weather = {
-      dir: U.norm360(w.dir + U.rnd(-10, 10)),
-      spd: Math.max(3, w.spd + U.rnd(-2, 2)),
-      qnh: Math.round(U.rnd(1010, 1022)),
-      temp: Math.round(U.rnd(21, 29)),
-    };
-    this.atisIdx = 0; this.wxMin = 0; this.metarT = 0;
-    this.windEvent = { at: this.time + U.rnd(1100, 2200), target: null, spdT: null };
-  },
-
-  updateWeather(h) {
-    if (!this.weather) return;
-    this.wxMin += h;
-    if (this.wxMin >= 60) { // a cada minuto simulado
-      this.wxMin = 0;
-      const w = this.weather;
-      if (this.windEvent && this.windEvent.target !== null) {
-        // frente passando: o vento gira até a direção-alvo
-        const diff = U.adiff(w.dir, this.windEvent.target);
-        if (Math.abs(diff) <= 12) {
-          w.dir = this.windEvent.target;
-          this.windEvent = { at: this.time + U.rnd(1400, 2600), target: null, spdT: null };
-          this.publishAtis('o vento estabilizou');
-        } else {
-          w.dir = U.norm360(w.dir + Math.sign(diff) * 12);
-        }
-        if (this.windEvent && this.windEvent.spdT !== null)
-          w.spd += Math.sign(this.windEvent.spdT - w.spd) * Math.min(1.5, Math.abs(this.windEvent.spdT - w.spd));
-      } else {
-        // deriva normal
-        w.dir = U.norm360(w.dir + U.rnd(-5, 5));
-        w.spd = Math.max(2, Math.min(22, w.spd + U.rnd(-0.8, 0.8)));
-        if (this.windEvent && this.time >= this.windEvent.at) {
-          this.windEvent.target = U.norm360(w.dir + U.pick([150, 180, 200, -150, -170]));
-          this.windEvent.spdT = U.rnd(8, 16);
-          UI.logSys('Meteorologia: o vento está mudando de direção…', '');
-        }
-      }
-    }
-    // novo METAR/ATIS a cada 30 min
-    this.metarT += h;
-    if (this.metarT >= 1800) { this.metarT = 0; this.publishAtis(); }
-  },
-
-  publishAtis(extra) {
-    this.atisIdx++;
-    UI.logSys(`Informação ATIS ${this.atisLetter()} disponível${extra ? ' — ' + extra : ''}: ${this.metar()}`);
-    const tw = this.tailwind();
-    if (tw >= 8) {
-      UI.flashBanner(`Vento de cauda de ${Math.round(tw)} kt na pista ${DATA.CONFIGS[this.cfg].arrRwy} — avalie trocar a configuração (botão ATIS)`, 'bad');
-      UI.chime();
-    }
-  },
-
-  atisLetter() {
-    return String.fromCharCode(65 + (this.atisIdx % 26));
-  },
-
-  metar() {
-    const w = this.weather;
-    if (!w) return '—';
-    const hhmm = this.clock().slice(0, 5).replace(':', '');
-    let ddd = Math.round(w.dir / 10) * 10;
-    if (ddd === 0) ddd = 360;
-    const dew = w.temp - 7;
-    return `METAR ${DATA.AIRPORT.icao} 14${hhmm}Z ${String(ddd).padStart(3, '0')}${String(Math.round(w.spd)).padStart(2, '0')}KT 9999 FEW025 SCT080 ${w.temp}/${dew} Q${w.qnh}`;
-  },
-
-  // componente de vento de cauda na pista de pouso da configuração (kt, >0 = cauda)
-  tailwind(cfgKey) {
-    const cfg = DATA.CONFIGS[cfgKey || this.cfg];
-    if (!cfg || !this.weather) return 0;
-    const r = DATA.RUNWAYS[cfg.arrRwy];
-    return -this.weather.spd * Math.cos(U.d2r(this.weather.dir - r.hdg));
-  },
-
-  // troca de pistas em uso durante o jogo
-  setConfig(k) {
-    if (k === this.cfg || !DATA.CONFIGS[k]) return;
-    this.cfg = k;
-    const c = DATA.CONFIGS[k];
-    // saídas ainda taxiando são re-alocadas para a nova configuração
-    for (const a of this.aircraft) {
-      if (a.kind === 'dep' && a.state === 'taxi') {
-        a.rwy = c.depRwy;
-        const oldExit = DATA.SIDS[a.sid] && DATA.SIDS[a.sid].exit;
-        const nova = Object.entries(DATA.SIDS).find(([, s]) => s.cfg === k && s.exit === oldExit);
-        if (nova) a.sid = nova[0];
-      }
-    }
-    document.getElementById('cfgLabel').textContent =
-      DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + c.label;
-    this.publishAtis('nova configuração em vigor');
-    UI.logSys('PISTAS EM USO: ' + c.label);
-    UI.flashBanner('Pistas em uso: pousos ' + c.arrRwy + ' · decolagens ' + c.depRwy);
-    // aeronaves já no ponto de espera antigo: lembre o jogador do comando TAXI
-    if (this.aircraft.some(a => a.kind === 'dep' &&
-        ['holdshort', 'lineup'].includes(a.state) && DATA.RWY_PAIR[a.rwy] !== DATA.RWY_PAIR[c.depRwy]))
-      UI.logSys('Há saídas na cabeceira antiga — use "TAXI ' + c.depRwy + '" para reposicioná-las.');
-  },
-
-  // conclusão de transferência ao Centro (manual = via comando HO)
-  completeHandoff(ac, manual) {
-    if (ac.state === 'done') return;
-    ac.state = 'done';
-    ac.handedOff = true;
-    this.stats.departed++;
-    if (manual) this.addScore(100, ac.cs + ' transferido ao Centro no momento certo');
-    else if (ac.alt >= 9500) this.addScore(60, ac.cs + ' transferido automaticamente (use HO e pontue mais)');
-    else this.addScore(30, ac.cs + ' transferido baixo e automaticamente');
-  },
-  rank() {
-    const s = this.score;
-    if (s < 300) return 'Estagiário';
-    if (s < 800) return 'Controlador Jr.';
-    if (s < 1600) return 'Controlador';
-    if (s < 3000) return 'Controlador Sênior';
-    return 'Supervisor de TMA';
-  },
-  trafficRates() {
-    // segundos médios entre chegadas/saídas
-    const base = { calmo: [110, 130], normal: [75, 90], pico: [50, 60] }[this.traffic];
-    // aperta levemente com o tempo de jogo (até -25%)
-    const f = Math.max(0.75, 1 - this.time / 3600 * 0.25);
-    return [base[0] * f, base[1] * f];
-  },
-
+  // ---------- seleção / pausa / velocidade (cliente) ----------
   select(a) {
     this.selected = a;
+    if (core) core.selected = a; // contexto para runCommand (omitir callsign)
     if (a) document.getElementById('cmdInput').value = a.cs + ' ';
     UI.refreshSelPanel();
     UI.refreshStrips();
   },
 
   togglePause() {
+    if (Net.active) { UI.logSys('Tempo controlado pelo servidor no multiplayer'); return; }
     this.paused = !this.paused;
     document.getElementById('btnPause').classList.toggle('on', this.paused);
     document.getElementById('pausedTag').classList.toggle('hidden', !this.paused);
   },
 
-  // rádio do piloto com pequeno atraso (imersão)
-  radioPilot(ac, text, delay) {
-    this.pendingRadio.push({ ac, text, at: this.time + (delay ?? U.rnd(0.6, 1.6)) });
-  },
-
-  addScore(n, why, cls) {
-    this.score = Math.max(0, this.score + n);
-    UI.logSys((n >= 0 ? '+' : '') + n + ' pts — ' + why, n >= 0 ? 'good' : 'bad');
-    if (n < 0) UI.flashBanner(why + ' (' + n + ' pts)', 'bad');
-    if (n > 0) this.saveRecordIfBest();
-  },
-
-  // ---------- geração de tráfego ----------
-  newCallsign(airline) {
-    for (let i = 0; i < 50; i++) {
-      const n = Math.floor(U.rnd(1000, 9999));
-      const cs = airline.code + n;
-      if (!this.usedCs.has(cs)) { this.usedCs.add(cs); return cs; }
-    }
-    return airline.code + Math.floor(U.rnd(100, 999));
-  },
-
-  spawnArrival() {
-    const stars = Object.entries(DATA.STARS).filter(([, s]) => s.cfg === this.cfg);
-    const [starId, star] = U.pick(stars);
-    const airline = U.pickW(DATA.AIRLINES);
-    const type = U.pick(airline.types);
-    const entry = U.fix(star.entry);
-    const alt = Math.round(U.rnd(15, 19)) * 1000;
-    const route = star.route.map(r => r.fix);
-    const ac = new Aircraft({
-      cs: this.newCallsign(airline), radio: airline.radio, type,
-      kind: 'arr', x: entry[0], y: entry[1], alt, spd: 290,
-      hdg: U.brg(entry[0], entry[1], U.fix(route[1])[0], U.fix(route[1])[1]),
-      star: starId,
-      nav: { mode: 'route', route, idx: 1 },
-      emergency: Math.random() < 0.05,
-      spawnT: this.time,
-    });
-    ac.clrAlt = alt;
-    this.aircraft.push(ac);
-    const emg = ac.emergency ? ' — declarando EMERGÊNCIA, solicitamos prioridade' : '';
-    this.radioPilot(ac, `bom dia, nível ${Math.round(alt / 100)}, chegada ${starId}${emg}`, 0.3);
-    if (ac.emergency) { UI.flashBanner('EMERGÊNCIA: ' + ac.cs + ' solicita prioridade!', 'bad'); UI.chime(); }
-  },
-
-  spawnDeparture() {
-    const sids = Object.entries(DATA.SIDS).filter(([, s]) => s.cfg === this.cfg);
-    const [sidId, sid] = U.pick(sids);
-    const airline = U.pickW(DATA.AIRLINES);
-    const type = U.pick(airline.types);
-    const ac = new Aircraft({
-      cs: this.newCallsign(airline), radio: airline.radio, type,
-      kind: 'dep', state: 'taxi', timer: U.rnd(25, 70),
-      sid: sidId, dest: U.pick(DATA.DESTS[sid.exit]),
-      spawnT: this.time,
-    });
-    ac.rwy = DATA.CONFIGS[this.cfg].depRwy;
-    ac.clrAlt = 5000;
-    this.aircraft.push(ac);
-  },
-
-  // helicóptero VFR que cruzará a zona do aeródromo (raio 5 NM)
-  spawnHeli() {
-    const th = U.rnd(0, 360);
-    const R0 = 22;
-    const ex = Math.sin(U.d2r(th)) * R0, ey = Math.cos(U.d2r(th)) * R0;
-    // saída do outro lado, com desvio para a rota passar perto do aeródromo
-    const thOut = U.norm360(th + 180 + U.rnd(-20, 20));
-    const wptExit = [Math.sin(U.d2r(thOut)) * R0, Math.cos(U.d2r(thOut)) * R0];
-    const type = U.pick(['H125', 'R44', 'AW39']);
-    const L = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
-    const cs = 'PR-' + L() + L() + L();
-    const ac = new Aircraft({
-      cs, radio: 'Helicóptero ' + cs.replace('-', ' '), type,
-      kind: 'hel', x: ex, y: ey,
-      alt: U.pick([1500, 2000, 2500, 3000]), spd: 100,
-      hdg: U.brg(ex, ey, wptExit[0], wptExit[1]),
-      spawnT: this.time,
-    });
-    ac.clrAlt = ac.alt;
-    ac.wptExit = wptExit;
-    ac.heliAuto = true;
-    ac.heliState = 'inbound';
-    ac.crossRequested = false;
-    ac.crossCleared = false;
-    ac.zoneEntered = false;
-    this.usedCs.add(cs);
-    this.aircraft.push(ac);
-    this.radioPilot(ac, `boa tarde, helicóptero ${type} VFR, ${Math.round(U.dist(0, 0, ex, ey))} milhas ao ` +
-      `${this.cardinal(th + 180)}, ${U.fmtAlt(ac.alt)}, vamos cruzar a zona do aeródromo`, 0.4);
-  },
-
-  cardinal(brg) {
-    const dirs = ['norte', 'nordeste', 'leste', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'];
-    return dirs[Math.round(U.norm360(brg) / 45) % 8];
-  },
-
-  onHeliCrossed(ac) {
-    this.addScore(50, ac.cs + ' cruzou a zona coordenado');
-    this.radioPilot(ac, 'cruzamento concluído, obrigado, bom serviço', 1);
-  },
-
-  // ---------- pista ----------
-  runwayOccupied(rwy, except) {
-    const pair = DATA.RWY_PAIR[rwy];
-    return this.aircraft.some(a => a !== except && a.state !== 'done' &&
-      ['lineup', 'takeoff', 'rollout', 'abort'].includes(a.state) && DATA.RWY_PAIR[a.rwy] === pair);
-  },
-
-  touchdown(ac) {
-    ac.state = 'rollout';
-    ac.rwy = ac.app.rwy;
-    ac.hdg = DATA.RUNWAYS[ac.rwy].hdg;
-    ac.alt = 0; ac.vs = 0;
-    ac.timer = U.rnd(8, 14); // tempo para livrar após desacelerar
-    ac.app = { phase: 'none', rwy: null };
-    this.stats.landed++;
-    let pts = 100;
-    if (ac.emergency) { pts += 150; UI.logSys(ac.cs + ' (emergência) pousou em segurança — bônus!', 'good'); }
-    this.addScore(pts, ac.cs + ' pousou pista ' + ac.rwy);
-    this.radioPilot(ac, `pista livre em seguida, obrigado, bom serviço`, 2.5);
-    UI.chime();
-  },
-
-  onGoAround(ac, reason) {
-    this.stats.goarounds++;
-    this.addScore(-100, ac.cs + ' arremeteu: ' + reason);
-    this.radioPilot(ac, `arremetendo, ${reason}`, 0.4);
-    UI.chime();
-  },
-
-  // executa uma instrução condicional que atingiu a condição (APOS)
-  execPending(ac, p) {
-    const { results } = Commands.run(ac, p.tokens, this);
-    const rbs = results.filter(r => r && r.rb).map(r => r.rb);
-    const errs = results.filter(r => r && r.err).map(r => r.err);
-    if (rbs.length) this.radioPilot(ac, rbs.join(', '), 0.3);
-    if (errs.length) this.radioPilot(ac, 'Não foi possível cumprir a condicional: ' + errs.join('; '), 0.3);
-    UI.refreshSelPanel();
-  },
-
   // ---------- comandos ----------
   runCommand(line) {
-    const res = Commands.parse(line, this);
-    if (!res) return;
-    if (res.err) { UI.logSys(res.err, 'bad'); return; }
-    const { ac, results, atcText } = res;
-    if (atcText) UI.logATC(ac.cs + ', ' + atcText + '.');
-    const rbs = [], errs = [];
-    for (const r of results) {
-      if (!r) continue;
-      if (r.err) errs.push(r.err);
-      else if (r.rb) rbs.push(r.rb);
+    if (Net.active) {
+      const l = line.trim();
+      // chat pela caixa de comando: /c texto (sessão) · /w nick texto (privado)
+      if (/^\/c\s+/i.test(l)) { Net.sendChat(l.replace(/^\/c\s+/i, '')); return; }
+      if (/^\/w\s+/i.test(l)) {
+        const rest = l.replace(/^\/w\s+/i, '');
+        const sp = rest.indexOf(' ');
+        if (sp < 0) { UI.logSys('Uso: /w nick mensagem', 'bad'); return; }
+        Net.sendChat(rest.slice(sp + 1).trim(), rest.slice(0, sp));
+        return;
+      }
+      Net.sendCmd(line);
+      return;
     }
-    if (rbs.length) this.radioPilot(ac, rbs.join(', '));
-    if (errs.length) this.radioPilot(ac, 'Negativo, ' + errs.join('; '));
-    if (results.some(r => r && r.early))
-      UI.flashBanner('Cedo demais para transferir ' + ac.cs + ' — complete a SID e a subida (≥ 9.000 ft)', 'bad');
-    this.select(this.selected === ac ? ac : this.selected); // refresh
+    if (!core) return;
+    const res = core.runCommand(line);
+    if (res && res.early && res.cs)
+      UI.flashBanner('Cedo demais para transferir ' + res.cs + ' — complete a SID e a subida (≥ 9.000 ft)', 'bad');
+    this.select(this.selected); // refresh do painel/seleção
     UI.refreshSelPanel();
   },
 
-  // ---------- conflitos ----------
-  checkConflicts(dt) {
-    const air = this.aircraft.filter(a => a.airborne && a.alt > 400);
-    for (const a of air) a.stca = 0;
-    this.conflictPairs = [];
-    let anyLoss = false;
-    for (let i = 0; i < air.length; i++) for (let j = i + 1; j < air.length; j++) {
-      const a = air[i], b = air[j];
-      // aproximações paralelas estabelecidas em pistas distintas: separadas por procedimento
-      const estA = a.app.phase === 'loc' || a.app.phase === 'gs';
-      const estB = b.app.phase === 'loc' || b.app.phase === 'gs';
-      if (estA && estB && a.app.rwy !== b.app.rwy) continue;
-
-      const d = U.dist(a.x, a.y, b.x, b.y);
-      const dz = Math.abs(a.alt - b.alt);
-      const key = a.cs + '|' + b.cs;
-      if (d < 3 && dz < 1000) {
-        a.stca = b.stca = 2; anyLoss = true;
-        this.conflictPairs.push({ a, b, d, loss: true });
-        let e = this.sepPairs.get(key);
-        if (!e) {
-          e = { t: 0, next: 5 };
-          this.sepPairs.set(key, e);
-          this.stats.sepLoss++;
-          this.addScore(-200, 'PERDA DE SEPARAÇÃO: ' + a.cs + ' × ' + b.cs);
-        }
-        // penalidade contínua enquanto o conflito durar
-        e.t += dt || 0;
-        if (e.t >= e.next) {
-          e.next += 5;
-          this.addScore(-25, `conflito persiste há ${Math.round(e.t)} s: ${a.cs} × ${b.cs}`);
-        }
-      } else {
-        if (d > 5 || dz > 1400) this.sepPairs.delete(key);
-        // previsão 60 s (linear)
-        const t = 60 / 3600;
-        const ax = a.x + Math.sin(U.d2r(a.hdg)) * a.spd * t, ay = a.y + Math.cos(U.d2r(a.hdg)) * a.spd * t;
-        const bx = b.x + Math.sin(U.d2r(b.hdg)) * b.spd * t, by = b.y + Math.cos(U.d2r(b.hdg)) * b.spd * t;
-        const df = U.dist(ax, ay, bx, by);
-        const za = a.alt + a.vs, zb = b.alt + b.vs;
-        if (Math.min(d, df) < 3.2 && (dz < 1000 || Math.abs(za - zb) < 1000)) {
-          if (a.stca === 0) a.stca = 1;
-          if (b.stca === 0) b.stca = 1;
-          this.conflictPairs.push({ a, b, d, loss: false });
-        }
-      }
-    }
-    UI.setAlarm(anyLoss);
-  },
-
-  // ---------- limites / transferências ----------
-  checkBoundaries() {
-    for (const ac of this.aircraft) {
-      if (!ac.airborne) continue;
-      const d = U.dist(0, 0, ac.x, ac.y);
-      if (ac.kind === 'dep') {
-        const exitFix = DATA.SIDS[ac.sid]?.exit;
-        const nearExit = exitFix && ac.fixDist(exitFix) < 3;
-        if (d > DATA.AIRPORT.range - 2 || nearExit) {
-          this.radioPilot(ac, 'chamando o Centro, obrigado, até logo', 0.3);
-          this.completeHandoff(ac, false);
-        }
-      } else if (ac.kind === 'hel') {
-        if (d > DATA.AIRPORT.range - 20) ac.state = 'done'; // deixou a área baixa
-      } else if (d > DATA.AIRPORT.range + 3 && !ac.offRadarPenalized) {
-        ac.offRadarPenalized = true;
-        ac.state = 'done';
-        this.addScore(-150, ac.cs + ' saiu da TMA sem controle');
-      }
-    }
-  },
-
-  // ---------- loop ----------
+  // ---------- laço do cliente ----------
   update(dt) {
-    if (this.paused || !this.started) return;
-    dt *= this.simSpeed;
-    // subpassos para estabilidade em velocidade acelerada
-    const steps = Math.max(1, Math.ceil(dt / 0.5));
-    const h = dt / steps;
-    for (let s = 0; s < steps; s++) {
-      this.time += h;
-      this.updateWeather(h);
-      for (const ac of this.aircraft) ac.update(h, this);
-
-      // rádio pendente
-      for (let i = this.pendingRadio.length - 1; i >= 0; i--) {
-        const m = this.pendingRadio[i];
-        if (this.time >= m.at) {
-          if (m.ac.state !== 'done' || m.ac.handedOff || m.ac.rwy) UI.logPilot(m.ac, m.text);
-          this.pendingRadio.splice(i, 1);
-        }
-      }
-
-      // spawns
-      this.nextArr -= h; this.nextDep -= h; this.nextHeli -= h;
-      const [ra, rd] = this.trafficRates();
-      const arrCount = this.aircraft.filter(a => a.kind === 'arr' && a.state !== 'done').length;
-      const depCount = this.aircraft.filter(a => a.kind === 'dep' && a.state !== 'done').length;
-      const helCount = this.aircraft.filter(a => a.kind === 'hel' && a.state !== 'done').length;
-      if (this.nextArr <= 0) { if (arrCount < 9) this.spawnArrival(); this.nextArr = U.rnd(ra * 0.7, ra * 1.3); }
-      if (this.nextDep <= 0) { if (depCount < 7) this.spawnDeparture(); this.nextDep = U.rnd(rd * 0.7, rd * 1.3); }
-      if (this.nextHeli <= 0) { if (helCount < 2) this.spawnHeli(); this.nextHeli = U.rnd(240, 480); }
+    if (Net.active) { // multiplayer: sem pausa nem velocidade — o servidor manda
+      Net.tick(dt);
+      if (this.selected && (this.selected.state === 'done' || !Net.aircraft.includes(this.selected)))
+        this.select(null);
+      return;
     }
-
-    this.checkConflicts(dt);
-    this.checkBoundaries();
-    this.aircraft = this.aircraft.filter(a => a.state !== 'done');
+    if (!core || !core.started || this.paused) return;
+    core.tick(dt * this.simSpeed);
     if (this.selected && this.selected.state === 'done') this.select(null);
   },
 
-  reset() {
-    this.aircraft = [];
-    this.selected = null;
-    this.score = 0;
-    this.time = 0;
+  // ---------- ciclo de vida da partida ----------
+  start(cfg, traffic) {
+    core = new GameCore(this.airportJson, { cfg, traffic, emit: handleEmit });
+    core.selected = this.selected;
     this.simSpeed = 1;
     this.paused = false;
-    this.started = false;
-    this.stats = { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 };
-    this.usedCs = new Set();
-    this.pendingRadio = [];
-    this.sepPairs = new Map();
-    this.weather = null;
-    this.atisIdx = 0;
-    this.windEvent = null;
+    document.getElementById('startOverlay').classList.add('hidden');
+    document.getElementById('cfgLabel').textContent =
+      DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + DATA.CONFIGS[cfg].label;
+    if (!UI.isTouch) document.getElementById('cmdInput').focus();
+  },
+
+  reset() {
+    if (Net.session || Net.active || Net.connected) Net.leave(); // sai da sessão MP
+    core = null;
+    this.selected = null;
+    this.simSpeed = 1;
+    this.paused = false;
     UI.setAlarm(false);
     document.getElementById('log').innerHTML = '';
     document.getElementById('cmdInput').value = '';
@@ -497,24 +212,6 @@ const game = {
     document.querySelectorAll('#speedBtns button').forEach(x => x.classList.toggle('on', x.dataset.s === '1'));
     UI.refreshStrips(); UI.refreshTop(); UI.refreshSelPanel();
     document.getElementById('startOverlay').classList.remove('hidden');
-  },
-
-  start(cfg, traffic) {
-    this.cfg = cfg;
-    this.traffic = traffic;
-    this.initWeather();
-    this.started = true;
-    document.getElementById('startOverlay').classList.add('hidden');
-    document.getElementById('cfgLabel').textContent =
-      DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + DATA.CONFIGS[cfg].label;
-    UI.logSys('Posição assumida. ' + DATA.CONFIGS[cfg].label + '. Vento ' + this.windStr() + '. Bom serviço!');
-    // tráfego inicial
-    this.spawnArrival();
-    this.nextArr = U.rnd(20, 35);
-    this.nextDep = U.rnd(8, 15);
-    this.nextHeli = U.rnd(120, 260);
-    this.spawnDeparture();
-    if (!UI.isTouch) document.getElementById('cmdInput').focus();
   },
 };
 
@@ -553,7 +250,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   async function selectAirport(entry, btn) {
     document.querySelectorAll('#airportPick button').forEach(x => x.classList.toggle('on', x === btn));
-    await DATA.loadAirport(entry.file);
+    game.airportJson = await DATA.loadAirport(entry.file);
     document.querySelector('.startCard .sub').textContent =
       `Aeroporto ${DATA.AIRPORT.name} (${DATA.AIRPORT.icao}) — Controle de Aproximação e Torre`;
     buildCfgButtons();
@@ -572,7 +269,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       if (i === 0) b.classList.add('on');
       box.appendChild(b);
     });
-    if (manifest.length) await DATA.loadAirport(manifest[0].file);
+    if (manifest.length) game.airportJson = await DATA.loadAirport(manifest[0].file);
     buildCfgButtons();
   } catch (e) {
     document.querySelector('.startCard .sub').textContent =
@@ -589,6 +286,64 @@ window.addEventListener('DOMContentLoaded', async () => {
     Radar.fitView();
   };
   document.getElementById('btnStartCharts').onclick = () => UI.openCharts();
+
+  // ---------------- multiplayer (lobby + sessão) ----------------
+  const $id = id => document.getElementById(id);
+  const mpMsg = t => { $id('mpMsg').textContent = t || ''; };
+  Net.onError = t => mpMsg(t);
+
+  // conecta (se preciso), faz o hello e então executa a ação (create/join)
+  function mpGo(then) {
+    const nick = $id('mpNick').value.trim();
+    if (!nick) { mpMsg('Informe um indicativo (nick) para jogar em rede.'); return; }
+    try { localStorage.setItem('atcv-nick', nick); } catch (e) {}
+    mpMsg('Conectando ao servidor…');
+    Net.connect(
+      () => { Net._afterHello = then; Net.hello(nick); },
+      () => mpMsg('Sem servidor multiplayer — sirva o jogo com "cd server && node index.js" e abra por lá.'));
+  }
+  try { $id('mpNick').value = localStorage.getItem('atcv-nick') || ''; } catch (e) {}
+  $id('mpCreate').onclick = () => mpGo(() => Net.create(selCfg, selTraffic));
+  $id('mpJoin').onclick = () => {
+    const code = $id('mpCode').value.trim().toUpperCase();
+    if (!/^[A-Z]{5}$/.test(code)) { mpMsg('Código da sessão: 5 letras (ex.: KDQXZ).'); return; }
+    mpGo(() => Net.join(code));
+  };
+  $id('mpCode').addEventListener('keydown', e => { if (e.key === 'Enter') $id('mpJoin').onclick(); });
+
+  // lobby: atualizado a cada mensagem 'session'
+  Net.onSession = s => {
+    mpMsg('');
+    if (Net.active) return; // em jogo: não reabrir o lobby (jogador entrou/saiu)
+    $id('lobbyModal').classList.remove('hidden');
+    $id('lobbyCode').textContent = s.code;
+    const me = (s.players || []).find(p => p.nick === Net.nick);
+    const box = $id('lobbyPlayers');
+    box.innerHTML = '';
+    for (const p of (s.players || [])) {
+      const el = document.createElement('div');
+      el.className = 'lp';
+      const host = p.nick === s.host ? '<span class="host" title="Host">★</span> ' : '';
+      const nk = document.createElement('span');
+      nk.textContent = p.nick + (p.nick === Net.nick ? ' (você)' : '');
+      el.innerHTML = host;
+      el.appendChild(nk);
+      const pos = document.createElement('span');
+      pos.className = 'pos';
+      pos.textContent = p.pos || 'OBS';
+      el.appendChild(pos);
+      box.appendChild(el);
+    }
+    document.querySelectorAll('#lobbyPos button').forEach(b =>
+      b.classList.toggle('on', !!me && me.pos === b.dataset.pos));
+    $id('lobbyStart').classList.toggle('hidden', s.host !== Net.nick);
+  };
+  document.querySelectorAll('#lobbyPos button').forEach(b =>
+    b.onclick = () => Net.setPosition(b.dataset.pos));
+  $id('lobbyStart').onclick = () => Net.start();
+  // fechar o lobby (✕ ou clique fora) = sair da sessão
+  $id('lobbyModal').querySelector('.close').onclick = () => Net.leave();
+  $id('lobbyModal').addEventListener('click', e => { if (e.target === $id('lobbyModal')) Net.leave(); });
 
   // menu de reinício
   document.getElementById('btnRestart').onclick = () => {

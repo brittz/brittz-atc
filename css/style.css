@@ -181,6 +181,10 @@ button.primary:hover { background: #1a5a42; }
 #log .sys { color: var(--dim); font-style: italic; }
 #log .sys.good { color: var(--good); }
 #log .sys.bad { color: var(--alert); font-style: normal; }
+#log .chatmsg { color: #ffd9a0; }
+#log .chatmsg .who { color: #ffd9a0; }
+#log .chatmsg.priv { color: #ff9ad5; }
+#log .chatmsg.priv .who { color: #ff9ad5; }
 
 /* entrada de comando */
 #cmdInput {
@@ -210,6 +214,27 @@ button.primary:hover { background: #1a5a42; }
 .pickRow > span:first-child { color: var(--dim); min-width: 105px; }
 .pickRow > span:last-child { display: flex; gap: 6px; flex-wrap: wrap; }
 .pickRow .loading { color: var(--dim); font-style: italic; }
+
+/* ===== multiplayer: bloco da tela inicial + lobby ===== */
+.mpTitle { color: var(--dim); text-align: center; letter-spacing: 1px; font-size: 11px; margin: 14px 0 10px; }
+#mpNick, #mpCode {
+  background: #06121a; color: var(--txt);
+  border: 1px solid var(--line); border-radius: 3px;
+  font-family: inherit; font-size: 13px; padding: 5px 8px;
+}
+#mpNick:focus, #mpCode:focus { outline: none; border-color: var(--arr); }
+#mpCode { width: 92px; text-transform: uppercase; letter-spacing: 2px; }
+#mpMsg { min-height: 15px; color: var(--warn); }
+.modalBox.lobby { width: 440px; max-width: 92vw; }
+.modalBox.lobby h2 { color: var(--arr); margin-bottom: 10px; }
+.modalBox.lobby h3 { color: var(--dim); margin: 14px 0 6px; font-size: 12px; letter-spacing: 1px; }
+.lobbyCode { font-size: 14px; }
+.lobbyCode b { color: var(--sel); font-size: 24px; letter-spacing: 8px; margin-left: 6px; }
+#lobbyPlayers .lp { display: flex; gap: 8px; padding: 4px 6px; border-bottom: 1px solid #12202b; }
+#lobbyPlayers .lp .host { color: var(--sel); }
+#lobbyPlayers .lp .pos { margin-left: auto; color: var(--arr); }
+#lobbyPos { display: flex; gap: 6px; flex-wrap: wrap; }
+#cfgSwitch button:disabled { opacity: 0.45; cursor: default; }
 
 .modalBox.confirm { max-width: 430px; text-align: center; }
 .modalBox.confirm h2 { color: var(--warn); margin-bottom: 10px; }

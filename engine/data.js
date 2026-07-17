@@ -94,3 +94,7 @@ const U = {
     return arr[arr.length - 1];
   },
 };
+
+// Compatibilidade dual browser/Node: no browser DATA/U continuam globais;
+// em Node ficam disponíveis via require('./data.js').
+if (typeof module !== 'undefined') module.exports = { DATA, U };

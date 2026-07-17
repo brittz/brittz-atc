@@ -107,6 +107,16 @@ const UI = (() => {
   }
   function logSys(text, cls) { log('SISTEMA', text, 'sys ' + (cls || '')); }
 
+  // chat do multiplayer (conteúdo vem de outros jogadores: escapar HTML)
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function logChat(from, text, priv) {
+    const who = priv ? '🔒 ' + esc(from) + ' → você:' : '💬 ' + esc(from) + ':';
+    log(who, esc(text), 'chatmsg' + (priv ? ' priv' : ''));
+  }
+
   function spellCallsign(ac) {
     const num = ac.cs.replace(/^[A-Z]+/, '').split('').join(' ');
     return ac.radio + ' ' + num;
@@ -582,14 +592,22 @@ const UI = (() => {
       `⚠ Componente de cauda de ${Math.round(tw)} kt na pista ${DATA.CONFIGS[game.cfg].arrRwy} — considere trocar a configuração.`;
     const box = $('cfgSwitch');
     box.innerHTML = '';
+    const mp = typeof Net !== 'undefined' && Net.active; // troca de pistas só no SP
     for (const [k, c] of Object.entries(DATA.CONFIGS)) {
       const b = document.createElement('button');
       const twK = game.tailwind(k);
       b.textContent = (k === game.cfg ? '● ' : '○ ') + c.label +
         `  (cauda ${twK > 0 ? Math.round(twK) : 0} kt)`;
       b.classList.toggle('on', k === game.cfg);
+      b.disabled = mp;
       b.onclick = () => { game.setConfig(k); refreshAtisModal(); };
       box.appendChild(b);
+    }
+    if (mp) {
+      const n = document.createElement('p');
+      n.className = 'tiny';
+      n.textContent = 'Troca de pistas em uso disponível apenas no single-player.';
+      box.appendChild(n);
     }
   }
 
@@ -606,5 +624,5 @@ const UI = (() => {
     if (isTouch && document.activeElement === $('cmdInput')) $('cmdInput').blur();
   }
 
-  return { init, logATC, logPilot, logSys, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, propose, refreshAtisModal, dismissKeyboard, isTouch };
+  return { init, logATC, logPilot, logSys, logChat, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, propose, refreshAtisModal, dismissKeyboard, isTouch };
 })();

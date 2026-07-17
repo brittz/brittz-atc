@@ -1,0 +1,14 @@
+{
+  "name": "atc-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor multiplayer do ATC Costa Verde (HTTP estatico + WebSocket)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.9.0",
+    "ws": "^8.18.0"
+  }
+}

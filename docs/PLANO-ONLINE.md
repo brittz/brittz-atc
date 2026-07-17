@@ -123,9 +123,9 @@ tolera bem latência.
 | Fase | Entrega | Depende de |
 |---|---|---|
 | F0 ✅ | Jogo single-player data-driven (atual) | — |
-| F1 | Extrair `/engine` compartilhado + servidor Node rodando a MESMA partida single (autoridade no server) | — |
+| F1 ✅ | Extrair `/engine` compartilhado + servidor Node rodando a MESMA partida single (autoridade no server) | — |
 | F2 | Login Google + Atlas + recordes na nuvem | F1 |
-| F3 | **Multiplayer MVP**: cenário TMA-SP (2 torres + APP + Centro), handoffs entre players, chat | F1, F2 |
+| F3 ✅ (MVP: SBCV, posições TWR/APP/OBS, chat) | **Multiplayer MVP**: cenário TMA-SP (2 torres + APP + Centro), handoffs entre players, chat | F1, F2 |
 | F4 | Controle de solo SBGR + corredores de helicóptero de SP | F3 |
 | F5 | Cartas reais (AISWEB) em massa, mais cenários, ranking | F2 |
 

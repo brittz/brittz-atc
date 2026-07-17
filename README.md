@@ -14,6 +14,26 @@ python -m http.server 8123
 # abra http://localhost:8123
 ```
 
+## Multiplayer (beta)
+
+Amigos na mesma sessão, cada um numa posição (TWR = torre, APP = aproximação, OBS = observador):
+
+```bash
+cd server && npm install && node server/index.js   # ou: cd server && npm start
+# abra http://localhost:8124 (o servidor tambem serve o jogo)
+```
+
+Na tela inicial, bloco **Multiplayer**: escolha um nick e crie a sessão (você recebe um
+código de 5 letras) ou entre com o código de um amigo. No lobby cada um escolhe a posição;
+o host inicia. A simulação roda no servidor (tempo real, sem pausa/aceleração).
+
+- Comandos exigem o callsign e respeitam a posição: TWR autoriza pista (ALINHAR/DEC/AP/
+  ABORTAR/TAXI/CRZ/ARR), APP faz o resto (altitude, vetores, ILS, HO...). Posição vaga:
+  qualquer um cobre.
+- Chat pela caixa de comando: `/c mensagem` (sessão) e `/w nick mensagem` (privado).
+- Persistência opcional em MongoDB: defina `MONGODB_URI` no ambiente do servidor
+  (sem ela, tudo roda em memória).
+
 ## Como jogar
 
 Clique numa aeronave (ou strip) e use os botões rápidos, ou digite fraseologia no campo de

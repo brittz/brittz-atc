@@ -109,9 +109,48 @@
       <button id="btnStart" class="primary">▶ Assumir a posição</button>
       <button id="btnStartCharts">📑 Estudar as cartas</button>
     </div>
+    <div class="mpBlock">
+      <div class="mpTitle">── Multiplayer ──</div>
+      <div class="pickRow">
+        <span>Indicativo:</span>
+        <span><input id="mpNick" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="seu nick"></span>
+      </div>
+      <div class="pickRow">
+        <span>Sessão:</span>
+        <span>
+          <button id="mpCreate">Criar sessão</button>
+          <input id="mpCode" type="text" maxlength="5" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="CÓDIGO">
+          <button id="mpJoin">Entrar</button>
+        </span>
+      </div>
+      <p class="tiny" id="mpMsg"></p>
+    </div>
     <p class="tiny" id="recordLine"></p>
     <p class="tiny">Dica: clique numa aeronave (ou na strip) e use os botões rápidos, ou digite a fraseologia.
        Comece autorizando <b>VIA</b> (descer via STAR) e depois <b>ILS</b> + <b>AP</b>.</p>
+  </div>
+</div>
+
+<!-- ===== lobby multiplayer ===== -->
+<div id="lobbyModal" class="modal hidden">
+  <div class="modalBox lobby">
+    <button class="close" title="Sair da sessão">✕</button>
+    <h2>Sessão multiplayer</h2>
+    <div class="lobbyCode">Código: <b id="lobbyCode">—</b></div>
+    <p class="tiny">Compartilhe o código para outros controladores entrarem na sessão.</p>
+    <h3>Jogadores</h3>
+    <div id="lobbyPlayers"></div>
+    <h3>Sua posição</h3>
+    <div id="lobbyPos">
+      <button data-pos="TWR">TWR — Torre</button>
+      <button data-pos="APP">APP — Aproximação</button>
+      <button data-pos="OBS">Observador</button>
+    </div>
+    <p class="tiny">TWR: alinhamento, decolagem, pouso, cruzamentos · APP: altitudes, vetores,
+       ILS, STAR/SID, transferências · Observador: só acompanha (e conversa pelo chat).</p>
+    <div class="startBtns">
+      <button id="lobbyStart" class="primary hidden">▶ Iniciar</button>
+    </div>
   </div>
 </div>
 
@@ -221,11 +260,13 @@
   </div>
 </div>
 
-<script src="js/data.js"></script>
-<script src="js/aircraft.js"></script>
-<script src="js/commands.js"></script>
+<script src="engine/data.js"></script>
+<script src="engine/aircraft.js"></script>
+<script src="engine/commands.js"></script>
+<script src="engine/core.js"></script>
 <script src="js/radar.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/net.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

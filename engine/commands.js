@@ -7,6 +7,13 @@
 // ============================================================
 'use strict';
 
+// Compatibilidade dual: no browser DATA/U são globais; em Node importa os irmãos.
+if (typeof DATA === 'undefined' && typeof require !== 'undefined') {
+  const _d = require('./data.js');
+  globalThis.DATA = _d.DATA;
+  globalThis.U = _d.U;
+}
+
 const Commands = (() => {
 
   const KNOWN = new Set([
@@ -233,3 +240,5 @@ const Commands = (() => {
 
   return { parse, run };
 })();
+
+if (typeof module !== 'undefined') module.exports = { Commands };

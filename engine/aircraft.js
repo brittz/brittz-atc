@@ -3,6 +3,15 @@
 // ============================================================
 'use strict';
 
+// Compatibilidade dual: no browser DATA/U são globais (data.js já carregou);
+// em Node, importa do módulo irmão e publica em globalThis para que as
+// referências não-qualificadas (DATA, U) resolvam sem redeclarar o global.
+if (typeof DATA === 'undefined' && typeof require !== 'undefined') {
+  const _d = require('./data.js');
+  globalThis.DATA = _d.DATA;
+  globalThis.U = _d.U;
+}
+
 // estados de solo/voo:
 //  'taxi'      — strip visível, ainda taxiando (sem posição no radar)
 //  'holdshort' — parada no ponto de espera
@@ -736,3 +745,5 @@ class Aircraft {
     return 200;
   }
 }
+
+if (typeof module !== 'undefined') module.exports = { Aircraft };
