@@ -93,12 +93,15 @@ um parser ARINC 424 (FAA CIFP) para importação em massa.
 ```
 index.html          interface
 css/style.css       tema do console radar
-js/data.js          frota global + carregador de aeroportos
-js/aircraft.js      física e fases de voo (STAR, vetor, ILS, pouso, decolagem, espera)
-js/commands.js      parser de fraseologia e readbacks
+engine/data.js      frota global + carregador de aeroportos (browser e Node)
+engine/aircraft.js  física e fases de voo (STAR, vetor, ILS, pouso, decolagem, espera)
+engine/commands.js  parser de fraseologia e readbacks
+engine/core.js      GameCore: simulação headless (tráfego, conflitos, clima, pontuação)
 js/radar.js         renderização do scope (canvas, pan/zoom)
 js/ui.js            strips, comunicações, cartas, som e voz
-js/main.js          loop, tráfego, conflitos (STCA), pontuação
+js/main.js          adaptador single-player (liga o GameCore ao DOM)
+js/net.js           cliente multiplayer (WebSocket, lobby, hidratação de snapshots)
+server/             servidor multiplayer (HTTP + WS, sessões, posições, chat, Mongo opcional)
 airports/*.json     fases (espaço aéreo por aeroporto)
 ```
 
