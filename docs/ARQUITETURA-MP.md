@@ -9,6 +9,7 @@
 ```
 engine/            motor compartilhado (browser + Node)
   data.js          (movido de js/data.js — DATA + U)
+  emergency.js     NOVO: perfis/estados/evolução das emergências
   aircraft.js      (movido de js/aircraft.js)
   commands.js      (movido de js/commands.js)
   core.js          NOVO: classe GameCore (simulação headless, extraída de js/main.js)
@@ -50,7 +51,7 @@ class GameCore {
   setConfig(k)                // troca pistas em uso
   serialize()                 // snapshot completo p/ rede (ver §5)
   // campos públicos (leitura): aircraft[], score, stats, time, cfg, weather,
-  //   conflictPairs, started, traffic
+  //   conflictPairs, airportState, started, traffic
   // métodos públicos que o motor de aeronaves usa (mantidos): radioPilot,
   //   execPending, touchdown, onGoAround, runwayOccupied, windStr, clock,
   //   completeHandoff, onHeliCrossed, addScore, metar, atisLetter, tailwind,
@@ -83,7 +84,7 @@ Servidor → Cliente:
 {t:'hello-ok', nick}
 {t:'session', code, host, state:'lobby'|'ativa', players:[{nick,pos}], cfg, traffic}
 {t:'start', airport:<JSON completo do aeroporto>, cfg, time}
-{t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, aircraft:[...]}
+{t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, airportState, aircraft:[...]}
 {t:'radio', who, cs?, text, cls?}
 {t:'chat', from, to?, text}
 {t:'event', kind:'banner'|'chime'|'alarm', ...payload}
@@ -109,6 +110,12 @@ Whitelist (nada além disso): `cs, radio, type, kind, x, y, alt, spd, hdg, vs, c
 clrSpd, spdMode, state, nav, app, landClr, star, sid, dest, rwy, emergency, via, stca,
 goingAround, timer, heliState, heliAuto, crossRequested, crossCleared, wptExit,
 trail, pending:[{label}]`.
+
+`airportState` do snapshot é um objeto leve `{state:'normal'|'emergency'|'recovery',
+label, active:[callsigns], emergencyCs?, summary?}`. O campo `emergency` da aeronave
+também é serializado como resumo leve (`active, kind, title, declaration, severity,
+stage, evolution, answers, info, outcome, resultNote`) para o cliente reidratar com
+o módulo `engine/emergency.js` sem depender do servidor para a UI.
 No cliente MP, cada snapshot HIDRATA instâncias reais de `Aircraft`
 (`Object.assign(new Aircraft({...}), dados)`) para radar.js/ui.js funcionarem sem
 mudanças; entre snapshots o cliente roda `ac.update(dt, coreFake)` para interpolar

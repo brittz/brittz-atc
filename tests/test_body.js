@@ -280,3 +280,108 @@ console.log(execd.length && Math.abs(distNorte - 5) < 1 && arr2.clrAlt === 6000 
 
 console.log('\n--- eventos de radio ---');
 console.log(events.join('\n'));
+
+// ---------- Emergências 2.0: fluxo, evolução e estado operacional ----------
+const airportJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'airports/sbcv.json'), 'utf8'));
+const emgEvents = [];
+const core = new GameCore(airportJson, {
+  cfg: '09',
+  traffic: 'calmo',
+  emit: ev => emgEvents.push(ev),
+});
+const emgAc = core.aircraft.find(a => a.kind === 'arr');
+core.startEmergency(emgAc, 'engine-failure', { severity: 'high' });
+console.log('EMGdecl ->', emgAc.emergency && emgAc.emergency.title, '| estado aeroporto:', core.airportState.state);
+core.runCommand(emgAc.cs + ' NATURE SOULS FUEL INTENTIONS RWY STATUS');
+core.handleEmergencyState(emgAc);
+console.log('EMGflux ->', emgAc.emergency.stage, '| runway:', emgAc.emergency.info.runway, '| fuel:', emgAc.emergency.info.fuelMin);
+console.log(core.airportState.state === 'emergency' && ['assessed', 'coordinating'].includes(emgAc.emergency.stage)
+  ? 'OK EMERG FLUXO (declaração + perguntas em etapas + estado operacional)'
+  : 'FALHA EMERG FLUXO');
+
+// progressão completa: vetoração -> aproximação -> pouso -> pós-pouso -> encerramento
+emgAc.nav = { mode: 'hdg', hdg: 110, turn: null };
+core.handleEmergencyState(emgAc);
+const stVector = emgAc.emergency.stage;
+emgAc.cmdIls('09L');
+core.handleEmergencyState(emgAc);
+const stApproach = emgAc.emergency.stage;
+emgAc.cmdLand('09L');
+core.handleEmergencyState(emgAc);
+const stLanding = emgAc.emergency.stage;
+core.touchdown(emgAc);
+const stPost = emgAc.emergency.stage;
+const depHold = new Aircraft({
+  cs: 'GLO9911', radio: 'Gol', type: 'B738', kind: 'dep',
+  state: 'holdshort', sid: 'CACTO1', dest: 'SBGR',
+});
+depHold.rwy = '09R'; depHold.x = DATA.RUNWAYS['09R'].thr[0]; depHold.y = DATA.RUNWAYS['09R'].thr[1] - 0.18; depHold.hdg = 90;
+const depBlocked = depHold.cmdTakeoff('09R', core);
+emgAc.state = 'done';
+core.onRunwayVacated(emgAc);
+core.syncAirportState();
+console.log('EMGfull ->', stVector, stApproach, stLanding, stPost, '| depBlocked:', depBlocked.err || depBlocked.rb, '| airport:', core.airportState.state);
+console.log(stVector === 'vectoring' && stApproach === 'approach' && stLanding === 'landing' && stPost === 'post-landing' &&
+  depBlocked.err && core.airportState.state === 'recovery'
+  ? 'OK EMERG FLUXO COMPLETO (vetoração, aproximação, pouso, pós-pouso, recuperação e impacto no aeroporto)'
+  : 'FALHA EMERG FLUXO COMPLETO');
+
+// piora: bird strike -> engine failure
+const evoAc = core.aircraft.find(a => a.kind === 'dep') || core.aircraft[0];
+evoAc.emergency = Emergency.create('bird-strike', evoAc, core, {});
+evoAc.emergency.nextReviewAt = core.time;
+const savedRandom = Math.random;
+let seq = [0.5, 1, 0, 0.5];
+Math.random = () => (seq.length ? seq.shift() : 0.5);
+core.handleEmergencyState(evoAc);
+Math.random = savedRandom;
+console.log('EMGevoW ->', evoAc.emergency.kind, evoAc.emergency.evolution);
+console.log(evoAc.emergency.kind === 'engine-failure'
+  ? 'OK EMERG EVOLUÇÃO (bird strike piorou para falha de motor)'
+  : 'FALHA EMERG EVOLUÇÃO');
+
+// melhora/estabilização
+const impAc = core.aircraft.find(a => a !== evoAc && a.kind === 'arr') || core.aircraft[0];
+impAc.emergency = Emergency.create('cabin-smoke', impAc, core, { severity: 'high' });
+impAc.emergency.nextReviewAt = core.time;
+seq = [0.5, 0, 1, 0.5];
+Math.random = () => (seq.length ? seq.shift() : 0.5);
+core.handleEmergencyState(impAc);
+Math.random = savedRandom;
+console.log('EMGevoI ->', impAc.emergency.severity, impAc.emergency.evolution);
+console.log(impAc.emergency.evolution === 'improving'
+  ? 'OK EMERG ESTABILIZAÇÃO (fumaça melhorou)'
+  : 'FALHA EMERG ESTABILIZAÇÃO');
+
+// fechamento -> recuperação
+core.finishEmergency(evoAc, 'encerramento', '');
+core.finishEmergency(impAc, 'encerramento', '');
+core.syncAirportState();
+console.log('EMGrecov ->', core.airportState.state, 'até', Math.round(core.recoveryUntil));
+console.log(core.airportState.state === 'recovery'
+  ? 'OK ESTADO OPERACIONAL (recuperação após encerramento)'
+  : 'FALHA ESTADO OPERACIONAL');
+
+// iniciativas gerais dos pilotos fora da emergência
+const aiCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+aiCore.pendingRadio = [];
+const aiArr = new Aircraft({
+  cs: 'AZU9001', radio: 'Azul', type: 'A20N', kind: 'arr',
+  x: -18, y: 8, alt: 12000, spd: 250, hdg: 120,
+  star: 'SABIA1', nav: { mode: 'route', route: DATA.STARS.SABIA1.route.map(r => r.fix), idx: 1 },
+  spawnT: 0, pilotAi: { nextAt: 0, askedVectors: false, askedCenter: false, askedHold: false },
+});
+const aiDep = new Aircraft({
+  cs: 'GLO9002', radio: 'Gol', type: 'B738', kind: 'dep',
+  x: U.fix('CACTO')[0] - 2, y: U.fix('CACTO')[1], alt: 9200, spd: 260, hdg: 90,
+  sid: 'CACTO1', nav: { mode: 'route', route: DATA.SIDS.CACTO1.route.slice(), idx: 0 },
+  spawnT: 0, pilotAi: { nextAt: 0, askedVectors: false, askedCenter: false, askedHold: false },
+});
+aiCore.time = 500;
+aiCore.maybePilotInitiative(aiArr);
+aiCore.maybePilotInitiative(aiDep);
+const aiTexts = aiCore.pendingRadio.map(m => m.text).join(' | ');
+console.log('AIpilot ->', aiTexts);
+console.log(/descida|aproximação/.test(aiTexts) && /transferência ao Centro/.test(aiTexts)
+  ? 'OK IA PILOTOS (iniciativa fora das emergências)'
+  : 'FALHA IA PILOTOS');

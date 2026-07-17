@@ -50,6 +50,15 @@ button.primary:hover { background: #1a5a42; }
 #topbar .brand span { color: var(--dim); margin-left: 8px; font-size: 11px; }
 #topbar .stat { color: var(--dim); }
 #topbar .stat span, #topbar .stat b { color: var(--txt); }
+#topbar .opstate {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+#topbar .opstate.emergency { color: var(--alert); border-color: var(--alert); background: #2a0d12; }
+#topbar .opstate.recovery { color: var(--warn); border-color: var(--warn); background: #2f240d; }
+#topbar .opstate.normal { color: var(--good); border-color: #1f4a34; background: #102218; }
 #topbar .score span { color: var(--sel); font-size: 15px; }
 #topbar .score small { color: var(--dim); margin-left: 4px; }
 #topbar .small { font-size: 11px; }
@@ -125,6 +134,7 @@ button.primary:hover { background: #1a5a42; }
 #selCs { color: var(--sel); font-size: 16px; font-weight: bold; padding-right: 26px; }
 #selInfo { color: var(--dim); margin: 2px 0 4px; }
 #selData { font-size: 12px; margin-bottom: 8px; }
+#selEmergency { font-size: 11px; color: var(--alert); margin-bottom: 8px; line-height: 1.45; }
 #selPend { font-size: 11px; color: var(--warn); margin-bottom: 8px; line-height: 1.5; }
 #selClose {
   position: absolute; top: 6px; right: 6px;
@@ -135,6 +145,7 @@ button.primary:hover { background: #1a5a42; }
 #quickBtns button { padding: 3px 7px; font-size: 11px; }
 #quickBtns button.alt { border-color: #2d5a75; }
 #quickBtns button.spd { border-color: #4d4d75; }
+#quickBtns button.emg { border-color: var(--alert); color: #ffd4d9; }
 
 /* ===== sidebar ===== */
 #sidebar {

@@ -13,6 +13,7 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined') {
     globalThis.DATA = _d.DATA;
     globalThis.U = _d.U;
   }
+  if (typeof Emergency === 'undefined') globalThis.Emergency = require('./emergency.js').Emergency;
   if (typeof Aircraft === 'undefined') globalThis.Aircraft = require('./aircraft.js').Aircraft;
   if (typeof Commands === 'undefined') globalThis.Commands = require('./commands.js').Commands;
 }
@@ -37,6 +38,10 @@ class GameCore {
     this.pendingRadio = [];     // mensagens de piloto com atraso
     this.sepPairs = new Map();  // pares em perda de separação: key -> {t, next}
     this.conflictPairs = [];    // pares em alerta (para desenhar no radar)
+    this.airportState = { state: 'normal', label: Emergency.labelAirportState('normal'), active: [] };
+    this.recoveryUntil = 0;
+    this.nextEmergencyRoll = U.rnd(90, 170);
+    this.emergencyRunwayBlock = { until: 0, pair: null, reason: '' };
 
     // meteorologia dinâmica
     this.weather = null; this.atisIdx = 0; this.wxMin = 0; this.metarT = 0; this.windEvent = null;
@@ -57,6 +62,7 @@ class GameCore {
     this.nextDep = U.rnd(8, 15);
     this.nextHeli = U.rnd(120, 260);
     this.spawnDeparture();
+    this.syncAirportState();
   }
 
   // ---------- utilidades ----------
@@ -195,17 +201,149 @@ class GameCore {
     const base = { calmo: [110, 130], normal: [75, 90], pico: [50, 60] }[this.traffic];
     // aperta levemente com o tempo de jogo (até -25%)
     const f = Math.max(0.75, 1 - this.time / 3600 * 0.25);
-    return [base[0] * f, base[1] * f];
+    const op = this.airportState && this.airportState.state;
+    const factor = op === 'emergency' ? 1.55 : op === 'recovery' ? 1.2 : 1;
+    return [base[0] * f * factor, base[1] * f * factor];
   }
 
   // rádio do piloto com pequeno atraso (imersão)
   radioPilot(ac, text, delay) {
-    this.pendingRadio.push({ ac, text, at: this.time + (delay ?? U.rnd(0.6, 1.6)) });
+    const perf = ac && ac.effectivePerf ? ac.effectivePerf() : null;
+    const factor = perf && perf.responseDelayFactor ? perf.responseDelayFactor : 1;
+    this.pendingRadio.push({ ac, text, at: this.time + (delay ?? U.rnd(0.6, 1.6)) * factor });
   }
 
   addScore(n, why) {
     this.score = Math.max(0, this.score + n);
     this.emit({ type: 'score', delta: n, why, total: this.score });
+  }
+
+  syncAirportState() {
+    this.airportState = Emergency.operationalState(this);
+  }
+
+  shouldHoldDeparture(rwy, except) {
+    const pair = DATA.RWY_PAIR[rwy];
+    if (this.emergencyRunwayBlock.until > this.time && this.emergencyRunwayBlock.pair === pair) return true;
+    return this.aircraft.some(a => a !== except &&
+      a.emergency && a.emergency.active &&
+      a.kind === 'arr' &&
+      a.state !== 'done' &&
+      (
+        ['high', 'critical'].includes(a.emergency.severity) ||
+        DATA.RWY_PAIR[(a.emergency.info && a.emergency.info.runway) || a.app.rwy || DATA.CONFIGS[this.cfg].arrRwy] === pair
+      ) &&
+      ['declared', 'identified', 'assessed', 'coordinating', 'vectoring', 'approach', 'landing', 'post-landing'].includes(a.emergency.stage));
+  }
+
+  startEmergency(ac, kind, opts) {
+    if (!ac || ac.state === 'done') return null;
+    ac.emergency = Emergency.create(kind, ac, this, opts || {});
+    if (ac.pilotAi) ac.pilotAi.nextAt = this.time + U.rnd(18, 35);
+    this.syncAirportState();
+    this.radioPilot(ac, Emergency.declareText(ac), 0.2);
+    this.emit({ type: 'banner', text: 'EMERGÊNCIA: ' + ac.cs + ' — ' + ac.emergency.title, cls: 'bad' });
+    this.emit({ type: 'radio', who: 'sys', text: 'Estado operacional do aeroporto: EMERGÊNCIA. Priorize ' + ac.cs + ' e reorganize o fluxo.', cls: 'bad' });
+    for (const other of this.aircraft) {
+      if (other === ac || other.state === 'done') continue;
+      if (other.airborne && other.kind === 'arr' && U.dist(0, 0, other.x, other.y) < 28 && other.app.phase === 'none')
+        this.radioPilot(other, 'ciente prioridade para ' + ac.cs + ', podemos aceitar vetores ou espera', U.rnd(2, 6));
+      if (other.kind === 'dep' && ['taxi', 'holdshort', 'lineup'].includes(other.state))
+        this.radioPilot(other, 'mantendo posição, aguardando prioridade da emergência ' + ac.cs, U.rnd(2, 6));
+    }
+    this.emit({ type: 'chime' });
+    return ac.emergency;
+  }
+
+  finishEmergency(ac, outcome, note) {
+    if (!ac || !ac.emergency) return;
+    ac.emergency.active = false;
+    ac.emergency.outcome = outcome;
+    ac.emergency.resultNote = note || '';
+    ac.emergency.stage = 'closed';
+    this.recoveryUntil = Math.max(this.recoveryUntil, this.time + 150);
+    this.syncAirportState();
+    this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': emergência encerrada. Aeroporto em recuperação.', cls: 'good' });
+  }
+
+  maybeStartUnexpectedEmergency(dt) {
+    this.nextEmergencyRoll -= dt;
+    if (this.nextEmergencyRoll > 0) return;
+    this.nextEmergencyRoll = U.rnd(120, 220);
+    const active = this.aircraft.some(a => a.emergency && a.emergency.active && a.state !== 'done');
+    if (active) return;
+    if (Math.random() > 0.45) return;
+    const candidates = this.aircraft.filter(a =>
+      a.airborne &&
+      (a.kind === 'arr' || a.kind === 'dep') &&
+      !a.emergency &&
+      this.time - a.spawnT > 45
+    );
+    if (!candidates.length) return;
+    const types = Object.keys(Emergency.TYPES);
+    this.startEmergency(U.pick(candidates), U.pick(types));
+  }
+
+  handleEmergencyState(ac) {
+    if (!ac || !ac.emergency) return;
+    const stageChange = Emergency.syncStage(ac, this);
+    if (stageChange) {
+      if (stageChange.to === 'identified')
+        this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': natureza da emergência identificada como ' + ac.emergency.info.nature + '.', cls: 'bad' });
+      if (stageChange.to === 'assessed')
+        this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': avaliação recebida (POB ' + ac.emergency.info.souls + ', combustível ' + ac.emergency.info.fuelMin + ' min).', cls: 'bad' });
+      if (stageChange.to === 'coordinating' && !ac.emergency.flags.coordinated) {
+        ac.emergency.flags.coordinated = true;
+        this.emit({ type: 'radio', who: 'sys', text: 'Serviços de emergência acionados para ' + ac.cs, cls: 'bad' });
+      }
+      if (stageChange.to === 'vectoring')
+        this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': fase de vetoração de emergência em andamento.', cls: 'bad' });
+      if (stageChange.to === 'approach')
+        this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': aproximação prioritária em curso.', cls: 'bad' });
+      if (stageChange.to === 'landing')
+        this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': comprometido para pouso prioritário.', cls: 'bad' });
+      if (stageChange.to === 'post-landing')
+        this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': pós-pouso de emergência, mantenha a pista protegida.', cls: 'bad' });
+    }
+    const evolution = Emergency.maybeEvolve(ac, this);
+    if (evolution && evolution.text) this.radioPilot(ac, evolution.text, 0.5);
+  }
+
+  maybePilotInitiative(ac) {
+    if (!ac || !ac.airborne || ac.state === 'done' || !ac.pilotAi) return;
+    if (this.time < ac.pilotAi.nextAt) return;
+    let text = null;
+    if (ac.emergency && ac.emergency.active) {
+      text = Emergency.initiative(ac);
+      ac.pilotAi.nextAt = this.time + U.rnd(35, 65);
+    } else if (ac.kind === 'arr' && ac.nav.mode === 'route' && !ac.via && U.dist(0, 0, ac.x, ac.y) < 30 && ac.alt > 9000) {
+      text = 'solicitamos descida ou vetores para a aproximação';
+      ac.pilotAi.nextAt = this.time + U.rnd(90, 140);
+    } else if (ac.kind === 'arr' && ac.nav.mode === 'hold') {
+      text = 'solicitamos previsão para a aproximação';
+      ac.pilotAi.askedHold = true;
+      ac.pilotAi.nextAt = this.time + U.rnd(110, 160);
+    } else if (ac.kind === 'arr' && ac.app.phase === 'none' && ac.nav.mode === 'hdg' && U.dist(0, 0, ac.x, ac.y) < 18) {
+      text = 'solicitamos vetores para a final';
+      ac.pilotAi.askedVectors = true;
+      ac.pilotAi.nextAt = this.time + U.rnd(90, 140);
+    } else if (ac.kind === 'dep') {
+      const exitFix = DATA.SIDS[ac.sid] && DATA.SIDS[ac.sid].exit;
+      const nearExit = exitFix && ac.fixDist(exitFix) < 14;
+      if (ac.alt >= 8500 && nearExit && !ac.handedOff) {
+        text = 'prontos para transferência ao Centro';
+        ac.pilotAi.askedCenter = true;
+        ac.pilotAi.nextAt = this.time + U.rnd(90, 140);
+      } else if (ac.airborne && ac.clrAlt <= 5000 && ac.alt > 4200 && !ac.emergency) {
+        text = 'nivelando 5.000, solicitamos subida adicional quando disponível';
+        ac.pilotAi.nextAt = this.time + U.rnd(100, 150);
+      } else {
+        ac.pilotAi.nextAt = this.time + U.rnd(70, 110);
+      }
+    } else {
+      ac.pilotAi.nextAt = this.time + U.rnd(80, 130);
+    }
+    if (text) this.radioPilot(ac, text, 0.4);
   }
 
   // ---------- geração de tráfego ----------
@@ -232,17 +370,11 @@ class GameCore {
       hdg: U.brg(entry[0], entry[1], U.fix(route[1])[0], U.fix(route[1])[1]),
       star: starId,
       nav: { mode: 'route', route, idx: 1 },
-      emergency: Math.random() < 0.05,
       spawnT: this.time,
     });
     ac.clrAlt = alt;
     this.aircraft.push(ac);
-    const emg = ac.emergency ? ' — declarando EMERGÊNCIA, solicitamos prioridade' : '';
-    this.radioPilot(ac, `bom dia, nível ${Math.round(alt / 100)}, chegada ${starId}${emg}`, 0.3);
-    if (ac.emergency) {
-      this.emit({ type: 'banner', text: 'EMERGÊNCIA: ' + ac.cs + ' solicita prioridade!', cls: 'bad' });
-      this.emit({ type: 'chime' });
-    }
+    this.radioPilot(ac, `bom dia, nível ${Math.round(alt / 100)}, chegada ${starId}`, 0.3);
   }
 
   spawnDeparture() {
@@ -305,6 +437,7 @@ class GameCore {
   // ---------- pista ----------
   runwayOccupied(rwy, except) {
     const pair = DATA.RWY_PAIR[rwy];
+    if (this.emergencyRunwayBlock.until > this.time && this.emergencyRunwayBlock.pair === pair) return true;
     return this.aircraft.some(a => a !== except && a.state !== 'done' &&
       ['lineup', 'takeoff', 'rollout', 'abort'].includes(a.state) && DATA.RWY_PAIR[a.rwy] === pair);
   }
@@ -318,9 +451,27 @@ class GameCore {
     ac.app = { phase: 'none', rwy: null };
     this.stats.landed++;
     let pts = 100;
-    if (ac.emergency) {
+    if (ac.emergency && ac.emergency.active) {
       pts += 150;
       this.emit({ type: 'radio', who: 'sys', text: ac.cs + ' (emergência) pousou em segurança — bônus!', cls: 'good' });
+      const outcome = (ac.emergency.kind === 'engine-fire' || ac.emergency.kind === 'cockpit-smoke' || ac.emergency.kind === 'bomb-threat')
+        ? 'evacuação'
+        : 'pouso seguro';
+      ac.emergency.outcome = outcome;
+      ac.emergency.resultNote = outcome === 'evacuação' ? 'equipes de emergência na pista' : 'inspeção após o pouso';
+      ac.emergency.stage = 'post-landing';
+      ac.timer = outcome === 'evacuação' ? U.rnd(28, 40) : U.rnd(16, 24);
+      this.emergencyRunwayBlock = {
+        until: this.time + (outcome === 'evacuação' ? 85 : 35),
+        pair: DATA.RWY_PAIR[ac.rwy],
+        reason: outcome,
+      };
+      this.emit({ type: 'radio', who: 'sys',
+        text: outcome === 'evacuação'
+          ? ac.cs + ': evacuação prevista, pista temporariamente interditada.'
+          : ac.cs + ': equipes acompanhando o desembarque, mantenha a pista protegida.',
+        cls: 'bad' });
+      this.syncAirportState();
     }
     this.addScore(pts, ac.cs + ' pousou pista ' + ac.rwy);
     this.radioPilot(ac, `pista livre em seguida, obrigado, bom serviço`, 2.5);
@@ -331,7 +482,22 @@ class GameCore {
     this.stats.goarounds++;
     this.addScore(-100, ac.cs + ' arremeteu: ' + reason);
     this.radioPilot(ac, `arremetendo, ${reason}`, 0.4);
+    if (ac.emergency && ac.emergency.active) {
+      ac.emergency.outcome = 'arremetida';
+      ac.emergency.resultNote = reason;
+      this.syncAirportState();
+    }
     this.emit({ type: 'chime' });
+  }
+
+  onRunwayVacated(ac) {
+    if (!ac || !ac.rwy) return;
+    if (ac.emergency && ac.emergency.outcome) {
+      const note = ac.emergency.outcome === 'evacuação'
+        ? 'evacuação concluída e pista liberada'
+        : 'aeronave liberou a pista';
+      this.finishEmergency(ac, ac.emergency.outcome, note);
+    }
   }
 
   // executa uma instrução condicional que atingiu a condição (APOS)
@@ -430,7 +596,8 @@ class GameCore {
       } else if (d > DATA.AIRPORT.range + 3 && !ac.offRadarPenalized) {
         ac.offRadarPenalized = true;
         ac.state = 'done';
-        this.addScore(-150, ac.cs + ' saiu da TMA sem controle');
+        this.addScore(ac.emergency && ac.emergency.active ? -250 : -150,
+          ac.cs + ' saiu da TMA sem controle' + (ac.emergency && ac.emergency.active ? ' durante emergência' : ''));
       }
     }
   }
@@ -445,7 +612,12 @@ class GameCore {
     for (let s = 0; s < steps; s++) {
       this.time += h;
       this.updateWeather(h);
-      for (const ac of this.aircraft) ac.update(h, this);
+      if (this.emergencyRunwayBlock.until <= this.time) this.emergencyRunwayBlock = { until: 0, pair: null, reason: '' };
+      for (const ac of this.aircraft) {
+        ac.update(h, this);
+        this.handleEmergencyState(ac);
+        this.maybePilotInitiative(ac);
+      }
 
       // rádio pendente
       for (let i = this.pendingRadio.length - 1; i >= 0; i--) {
@@ -459,6 +631,7 @@ class GameCore {
 
       // spawns
       this.nextArr -= h; this.nextDep -= h; this.nextHeli -= h;
+      this.maybeStartUnexpectedEmergency(h);
       const [ra, rd] = this.trafficRates();
       const arrCount = this.aircraft.filter(a => a.kind === 'arr' && a.state !== 'done').length;
       const depCount = this.aircraft.filter(a => a.kind === 'dep' && a.state !== 'done').length;
@@ -471,6 +644,7 @@ class GameCore {
     this.checkConflicts(dt);
     this.checkBoundaries();
     this.aircraft = this.aircraft.filter(a => a.state !== 'done');
+    this.syncAirportState();
     // a seleção (contexto de comando) é responsabilidade do cliente; se a
     // aeronave selecionada saiu, o cliente a limpa após o tick.
     if (this.selected && this.selected.state === 'done') this.selected = null;
@@ -486,13 +660,14 @@ class GameCore {
       weather: { dir: W.dir, spd: W.spd, qnh: W.qnh, temp: W.temp },
       atis: this.atisLetter(),
       cfg: this.cfg,
+      airportState: { ...this.airportState },
       aircraft: this.aircraft.map(a => ({
         cs: a.cs, radio: a.radio, type: a.type, kind: a.kind,
         x: a.x, y: a.y, alt: a.alt, spd: a.spd, hdg: a.hdg, vs: a.vs,
         clrAlt: a.clrAlt, clrSpd: a.clrSpd, spdMode: a.spdMode,
         state: a.state, nav: a.nav, app: a.app, landClr: a.landClr,
         star: a.star, sid: a.sid, dest: a.dest, rwy: a.rwy,
-        emergency: a.emergency, via: a.via, stca: a.stca,
+        emergency: Emergency.serialize(a.emergency), via: a.via, stca: a.stca,
         goingAround: a.goingAround, timer: a.timer,
         heliState: a.heliState, heliAuto: a.heliAuto,
         crossRequested: a.crossRequested, crossCleared: a.crossCleared,

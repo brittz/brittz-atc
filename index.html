@@ -10,6 +10,7 @@
 
 <div id="topbar">
   <div class="brand">🛫 <b>ATC COSTA VERDE</b> <span id="cfgLabel"></span></div>
+  <div class="stat opstate" id="airportState">Normal</div>
   <div class="stat">⏱ <span id="clockEl">13:20:00</span></div>
   <button id="atisBtn" title="METAR / ATIS / pistas em uso">🌬 <span id="windEl">—</span> · ATIS <span id="atisLetter">A</span></button>
   <div class="stat score">★ <span id="score">0</span> <small id="rankEl">Estagiário</small></div>
@@ -41,6 +42,7 @@
         <div id="selCs">—</div>
         <div id="selInfo"></div>
         <div id="selData"></div>
+        <div id="selEmergency" class="hidden"></div>
         <div id="selPend"></div>
       </div>
       <div id="quickPanel" class="hidden">
@@ -67,7 +69,7 @@
         placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R">
       <button id="btnSend" title="Transmitir (Enter)">📡</button>
     </div>
-    <div id="cmdHint">A alt · V vel · P proa/fixo · DIR fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · APOS fixo/NM cmd · ESPERA · HO · ARR</div>
+    <div id="cmdHint">A alt · V vel · P proa/fixo · DIR fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · APOS fixo/NM cmd · ESPERA · HO · ARR · NATURE · SOULS · FUEL · INTENTIONS</div>
   </div>
 
   <div id="sidebar">
@@ -233,6 +235,7 @@
       <tr><td><code>SID CACTO1</code></td><td>Designa/troca a SID (no solo ou reingressa em voo)</td></tr>
       <tr><td><code>STAR PEDRA1</code></td><td>Designa/troca a STAR — a aeronave reingressa pelo fixo mais próximo</td></tr>
       <tr><td><code>HO</code> / <code>TRANSFERIR</code></td><td>Transfere a saída ao Centro (só perto do fixo de saída e ≥ 9.000 ft — pontua mais que a transferência automática)</td></tr>
+      <tr><td><code>NATURE</code> · <code>SOULS</code> · <code>FUEL</code> · <code>INTENTIONS</code> · <code>RWY</code> · <code>STATUS</code></td><td>Perguntas rápidas da emergência: natureza, pessoas a bordo, combustível, intenções, pista preferida e situação atual. Funcionam pelo mesmo rádio normal e aparecem também como atalhos rápidos na aeronave em emergência</td></tr>
     </table>
     <p>💡 <b>Antes da decolagem</b> você pode dar <code>A 2000</code>, <code>P 120</code> ou
        <code>DIR FAROL</code>: a aeronave cumpre após decolar (proa/direto substituem a SID aos
@@ -243,6 +246,7 @@
        <b>fixo</b> (monta <code>DIR</code>), numa <b>cabeceira</b> (monta <code>ILS</code>/<code>AP</code>/<code>DEC</code>)
        ou em <b>espaço vazio</b> (monta <code>P proa</code>) e confirme no botão 📡 ou Enter.
        Esc ou ✕ desselecionam. Pinça = zoom, arrastar = mover.</p>
+    <p>⚠ Em emergências, o topo mostra o estado operacional do aeroporto (<b>Normal</b>, <b>Emergência</b> ou <b>Recuperação</b>) e a aeronave selecionada ganha atalhos para a entrevista operacional.</p>
     <p>🌬 O vento muda com o tempo — acompanhe pelo botão <b>ATIS</b> no topo. Com vento de cauda
        forte, troque as pistas em uso por lá.</p>
     <h3>Como pontuar</h3>
@@ -261,6 +265,7 @@
 </div>
 
 <script src="engine/data.js"></script>
+<script src="engine/emergency.js"></script>
 <script src="engine/aircraft.js"></script>
 <script src="engine/commands.js"></script>
 <script src="engine/core.js"></script>

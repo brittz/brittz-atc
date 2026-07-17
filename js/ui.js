@@ -122,6 +122,11 @@ const UI = (() => {
     return ac.radio + ' ' + num;
   }
 
+  function emergencySummary(a) {
+    if (!a.emergency) return '';
+    return `${a.emergency.title || 'Emergência'} · ${Emergency.labelSeverity(a.emergency.severity || 'medium')} · ${Emergency.labelStage(a.emergency.stage || 'declared')}`;
+  }
+
   // ---------------- strips ----------------
   // Os elementos são REUTILIZADOS entre atualizações (reconciliação): destruir
   // e recriar o DOM a cada refresh engolia cliques que estivessem em andamento.
@@ -169,6 +174,11 @@ const UI = (() => {
   }
 
   function stripStatus(a) {
+    if (a.emergency && a.emergency.active) {
+      const base = Emergency.labelStage(a.emergency.stage || 'declared').toUpperCase();
+      if (a.state === 'rollout') return 'EMG PÓS-POUSO';
+      return 'EMG ' + base;
+    }
     if (a.kind === 'hel') {
       if (!a.heliAuto) return 'VETOR';
       return { inbound: a.crossRequested ? 'PEDE CRZ' : 'VFR', waiting: 'AGUARDA CRZ',
@@ -298,6 +308,15 @@ const UI = (() => {
     $('selData').textContent = a.onGround
       ? `No solo — ${stripStatus(a)}`
       : `ALT ${Math.round(a.alt)} ft (autz ${Math.round(a.clrAlt)}) · VEL ${Math.round(a.spd)} kt · PROA ${U.fmtHdg(a.hdg)} · ${stripStatus(a)}${nextFix}`;
+    if (a.emergency) {
+      $('selEmergency').classList.remove('hidden');
+      $('selEmergency').textContent = emergencySummary(a) +
+        (a.emergency.evolution ? ' · ' + a.emergency.evolution : '') +
+        (a.emergency.info && a.emergency.info.runway ? ' · prefere ' + a.emergency.info.runway : '');
+    } else {
+      $('selEmergency').classList.add('hidden');
+      $('selEmergency').textContent = '';
+    }
     $('selPend').innerHTML = (a.pending || []).map(p => '⏳ ' + p.label).join('<br>');
     $('selPend').style.display = (a.pending && a.pending.length) ? '' : 'none';
 
@@ -337,6 +356,9 @@ const UI = (() => {
         if (!a.crossCleared) btn('Autorizar cruzamento', 'CRZ', 'good');
       } else {
         btn('Transferir ao Centro', 'HO', 'good');
+      }
+      if (a.emergency) {
+        Emergency.QUICK_ACTIONS.forEach(it => btn(it.label, it.cmd, it.cls));
       }
       btn('V mín', 'V MIN', 'spd');
       btn('Vel. livre', 'V LIVRE', 'spd');
@@ -467,6 +489,8 @@ const UI = (() => {
     $('clockEl').textContent = game.clock() + 'Z';
     $('windEl').textContent = game.windStr();
     $('atisLetter').textContent = game.atisLetter();
+    $('airportState').textContent = game.airportState.label || 'Normal';
+    $('airportState').className = 'stat opstate ' + (game.airportState.state || 'normal');
     $('rankEl').textContent = game.rank();
     $('statLanded').textContent = game.stats.landed;
     $('statDeparted').textContent = game.stats.departed;

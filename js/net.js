@@ -14,6 +14,10 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' &&
     typeof Aircraft === 'undefined') {
   globalThis.Aircraft = require('../engine/aircraft.js').Aircraft;
 }
+if (typeof require !== 'undefined' && typeof module !== 'undefined' &&
+    typeof Emergency === 'undefined') {
+  globalThis.Emergency = require('../engine/emergency.js').Emergency;
+}
 
 const Net = {
   // ---------- estado ----------
@@ -31,6 +35,7 @@ const Net = {
   weather: null,         // {dir, spd, qnh, temp}
   atis: 'A',
   cfg: null,
+  airportState: { state: 'normal', label: 'Normal', active: [] },
 
   // hooks preenchidos pelo cliente (js/main.js)
   onSession: null,       // (msg) => atualiza o lobby
@@ -98,6 +103,7 @@ const Net = {
     this.active = false;
     this.session = null;
     this.aircraft = [];
+    this.airportState = { state: 'normal', label: 'Normal', active: [] };
     this._afterHello = null;
     if (typeof document !== 'undefined') {
       const lm = document.getElementById('lobbyModal');
@@ -129,6 +135,7 @@ const Net = {
         ac = new Aircraft({ cs: d.cs, type: d.type, kind: d.kind, x: d.x, y: d.y });
         this.aircraft.push(ac);
       }
+      if (d.emergency) d.emergency = Emergency.hydrate(d.emergency);
       // `pending` vem só com labels — fica como está para o painel (⏳)
       Object.assign(ac, d);
     }
@@ -201,6 +208,7 @@ const Net = {
         if (msg.weather) this.weather = msg.weather;
         if (msg.atis) this.atis = msg.atis;
         if (msg.cfg) this.cfg = msg.cfg;
+        if (msg.airportState) this.airportState = msg.airportState;
         this.hydrate(msg.aircraft || []);
         break;
 
@@ -239,6 +247,7 @@ const Net = {
     this.active = false;
     this.session = null;
     this.aircraft = [];
+    this.airportState = { state: 'normal', label: 'Normal', active: [] };
     this._afterHello = null;
     if (typeof document !== 'undefined') {
       const lm = document.getElementById('lobbyModal');

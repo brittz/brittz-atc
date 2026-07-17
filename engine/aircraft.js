@@ -11,6 +11,9 @@ if (typeof DATA === 'undefined' && typeof require !== 'undefined') {
   globalThis.DATA = _d.DATA;
   globalThis.U = _d.U;
 }
+if (typeof Emergency === 'undefined' && typeof require !== 'undefined') {
+  globalThis.Emergency = require('./emergency.js').Emergency;
+}
 
 // estados de solo/voo:
 //  'taxi'      — strip visível, ainda taxiando (sem posição no radar)
@@ -36,7 +39,7 @@ class Aircraft {
       star: opts.star ?? null,   // nome da STAR
       sid: opts.sid ?? null,     // nome da SID
       dest: opts.dest ?? null,
-      emergency: opts.emergency ?? false,
+      emergency: Emergency.hydrate(opts.emergency),
       state: opts.state ?? 'air',
       // navegação lateral
       nav: opts.nav ?? { mode: 'hdg', hdg: opts.hdg ?? 90, turn: null },
@@ -61,6 +64,7 @@ class Aircraft {
       spawnT: opts.spawnT ?? 0,
       estabAnnounced: false,
       offRadarPenalized: false,
+      pilotAi: opts.pilotAi ?? { nextAt: opts.spawnT ?? 0, askedVectors: false, askedCenter: false, askedHold: false },
     });
     this.tas = this.spd;
   }
@@ -99,9 +103,15 @@ class Aircraft {
     return d;
   }
 
+  effectivePerf() {
+    return Emergency.perf(this.perf, this.emergency);
+  }
+
   // ---- comandos (retornam mensagem de readback ou {err}) ----
   cmdAlt(alt) {
     if (alt < 2000 || alt > 24000) return { err: 'altitude fora dos limites da TMA (2.000–FL240)' };
+    const emgErr = Emergency.validateAltitude(this, alt);
+    if (emgErr) return { err: emgErr };
     // autorização de subida dada ainda no solo (aplicada após a decolagem)
     if (this.onGround) {
       if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
@@ -115,19 +125,22 @@ class Aircraft {
   }
   cmdSpd(spd) {
     if (this.onGround) return { err: 'ainda no solo' };
+    const perf = this.effectivePerf();
     // mínima/máxima operacional: o valor fica a critério do comandante
     // (flape, peso, margem de estol) e varia com a fase do voo
     if (spd === 'MIN') { this.spdMode = 'min'; this.clrSpd = 0; return { rb: 'Reduzindo para a velocidade mínima operacional' }; }
     if (spd === 'MAX') { this.spdMode = 'max'; this.clrSpd = 0; return { rb: 'Acelerando para a velocidade máxima' }; }
     this.spdMode = null;
-    if (spd !== 0 && spd < this.perf.min) return { err: `impossível, nossa mínima é ${this.perf.min} nós` };
-    if (spd > this.perf.max) return { err: `impossível, nossa máxima é ${this.perf.max} nós` };
+    if (spd !== 0 && spd < perf.min) return { err: `unable, nossa mínima atual é ${Math.round(perf.min)} nós` };
+    if (spd > perf.max) return { err: `unable, nossa máxima atual é ${Math.round(perf.max)} nós` };
     this.clrSpd = spd;
     if (spd === 0) return { rb: 'Velocidade a nosso critério' };
     const dir = spd < this.spd - 5 ? 'Reduzindo ' : spd > this.spd + 5 ? 'Acelerando ' : 'Mantendo ';
     return { rb: dir + spd + ' nós' };
   }
   cmdHdg(hdg, turn) {
+    const emgErr = this.airborne ? Emergency.validateHeading(this, hdg) : null;
+    if (emgErr) return { err: emgErr };
     // proa designada ainda no solo: substitui a SID após a decolagem (900 ft)
     if (!this.airborne) {
       if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
@@ -200,6 +213,8 @@ class Aircraft {
   cmdIls(rwy) {
     if (!this.airborne) return { err: 'ainda no solo' };
     if (!DATA.RUNWAYS[rwy]) return { err: 'pista desconhecida' };
+    const emgErr = Emergency.validateApproach(this, rwy);
+    if (emgErr) return { err: emgErr };
     this.app = { phase: 'cleared', rwy };
     this.estabAnnounced = false;
     return { rb: 'Autorizado ILS pista ' + rwy };
@@ -210,6 +225,9 @@ class Aircraft {
     this.landClr = true;
     return { rb: 'Autorizado pouso pista ' + this.app.rwy };
   }
+  cmdEmergencyQuery(query) {
+    return Emergency.answer(this, query);
+  }
   cmdLineup(rwy) {
     if (this.state !== 'holdshort') return { err: 'não estamos no ponto de espera' };
     if (DATA.RWY_PAIR[rwy] !== DATA.RWY_PAIR[this.rwy]) return { err: 'estamos no ponto de espera da ' + this.rwy };
@@ -219,10 +237,12 @@ class Aircraft {
     this.x = r.thr[0]; this.y = r.thr[1]; this.hdg = r.hdg;
     return { rb: 'Alinhar e manter, pista ' + rwy };
   }
-  cmdTakeoff(rwy) {
+  cmdTakeoff(rwy, game) {
     if (!['holdshort','lineup'].includes(this.state)) return { err: 'não estamos prontos na pista' };
     if (rwy && DATA.RWY_PAIR[rwy] === DATA.RWY_PAIR[this.rwy]) this.rwy = rwy;
     else if (rwy) return { err: 'estamos no ponto de espera da ' + this.rwy };
+    if (game && game.shouldHoldDeparture && game.shouldHoldDeparture(this.rwy, this))
+      return { err: 'aguarde, prioridade para o tráfego em emergência na pista ' + this.rwy };
     const wasLinedUp = this.state === 'lineup';
     const r = DATA.RUNWAYS[this.rwy];
     this.x = r.thr[0]; this.y = r.thr[1]; this.hdg = r.hdg;
@@ -232,13 +252,14 @@ class Aircraft {
   }
   // abortar a decolagem (RTO): desacelera na pista e taxia de volta à cabeceira
   cmdAbort() {
+    const perf = this.effectivePerf();
     if (this.state === 'lineup') {
       this.state = 'taxi';
       this.timer = U.rnd(40, 80);
       return { rb: 'Abandonando a pista, taxiando de volta à cabeceira' };
     }
     if (this.state !== 'takeoff') return { err: 'não estamos em rolagem de decolagem' };
-    if (this.spd > this.perf.vr - 12) return { err: 'acima de V1, vamos prosseguir a decolagem' };
+    if (this.spd > perf.vr - 12) return { err: 'acima de V1, vamos prosseguir a decolagem' };
     this.state = 'abort';
     return { rb: 'Abortando a decolagem' };
   }
@@ -455,13 +476,14 @@ class Aircraft {
     if (this.state === 'holdshort' || this.state === 'lineup') return;
 
     if (this.state === 'takeoff') {
+      const perf = this.effectivePerf();
       this.checkPending(game);
       if (this.timer > 0) { this.timer -= dt; return; } // terminando de alinhar
-      this.spd = Math.min(this.spd + this.perf.accel * 2.2 * dt, this.perf.vr + 15);
+      this.spd = Math.min(this.spd + perf.accel * 2.2 * dt, perf.vr + 15);
       this.moveStraight(dt);
-      if (this.spd >= this.perf.vr) {
+      if (this.spd >= perf.vr) {
         this.state = 'air';
-        this.alt = 50; this.vs = this.perf.climb;
+        this.alt = 50; this.vs = perf.climb;
         // subida inicial padrão de 5.000 ft SÓ quando o controle não impôs restrição
         if (!this.altAssigned) this.clrAlt = Math.max(this.clrAlt, 5000);
         this.clrSpd = 0;
@@ -489,7 +511,10 @@ class Aircraft {
       this.moveStraight(dt);
       if (this.spd <= 25) {
         this.timer -= dt;
-        if (this.timer <= 0) this.state = 'done';
+        if (this.timer <= 0) {
+          this.state = 'done';
+          if (game.onRunwayVacated) game.onRunwayVacated(this);
+        }
       }
       return;
     }
@@ -585,7 +610,8 @@ class Aircraft {
   }
 
   turnToward(target, dt, forced) {
-    const rate = (this.spd > 260 ? 2.2 : 3) * dt;
+    const perf = this.effectivePerf();
+    const rate = (this.spd > 260 ? 2.2 : (perf.turnRate || 3)) * dt;
     let diff = U.adiff(this.hdg, target);
     if (forced === 'L' && diff > 0) diff -= 360;
     if (forced === 'R' && diff < 0) diff += 360;
@@ -662,6 +688,7 @@ class Aircraft {
   }
 
   updateVertical(dt) {
+    const perf = this.effectivePerf();
     let target = this.clrAlt;
 
     // "descer via": gerencia o perfil pelas restrições da carta
@@ -673,7 +700,7 @@ class Aircraft {
         const gs = Math.max(this.spd, 60) / 3600; // NM/s
         const t = d / gs;                          // s até o fixo
         const reqVs = (this.alt - nxt.alt) / (t / 60); // fpm necessários
-        if (this.alt > nxt.alt + 50 && reqVs > this.perf.desc * 0.55) target = nxt.alt;
+        if (this.alt > nxt.alt + 50 && reqVs > perf.desc * 0.55) target = nxt.alt;
         else if (this.alt <= nxt.alt + 50) target = Math.min(this.alt, this.clrAlt);
         else target = this.alt; // ainda cedo para descer (perfil econômico)
         target = Math.max(target, this.clrAlt);
@@ -683,7 +710,7 @@ class Aircraft {
     // no glideslope: segue a rampa (nunca sobe para reencontrá-la)
     if (this.app.phase === 'gs') {
       const gsA = this.gsAlt();
-      const maxDn = this.perf.desc * 1.3 / 60 * dt;
+      const maxDn = perf.desc * 1.3 / 60 * dt;
       if (gsA < this.alt) this.alt = Math.max(gsA, this.alt - maxDn);
       this.vs = -(this.spd / 60) * DATA.AIRPORT.gsSlopeFtNm; // razão típica na rampa
       return;
@@ -692,7 +719,7 @@ class Aircraft {
     if (this.app.phase === 'loc') target = Math.min(target, Math.max(this.gsAlt(), 1800));
 
     const diff = target - this.alt;
-    const maxRate = diff > 0 ? this.perf.climb : this.perf.desc;
+    const maxRate = diff > 0 ? perf.climb : perf.desc;
     let rate = Math.min(Math.abs(diff) * 3, maxRate); // suaviza perto do nível
     this.vs = Math.sign(diff) * rate;
     if (Math.abs(diff) < 20) { this.alt = target; this.vs = 0; }
@@ -702,9 +729,10 @@ class Aircraft {
   }
 
   updateSpeed(dt) {
+    const perf = this.effectivePerf();
     let target = this.clrSpd > 0 ? this.clrSpd : this.defaultSpd();
     if (this.spdMode === 'min') target = this.minSpdNow();
-    if (this.spdMode === 'max') target = this.perf.max;
+    if (this.spdMode === 'max') target = perf.max;
     // helicóptero sem autorização: reduz chegando perto da zona e paira no limite
     if (this.kind === 'hel' && this.heliAuto && !this.crossCleared) {
       if (this.heliState === 'waiting') target = 0;
@@ -720,26 +748,28 @@ class Aircraft {
     // perfil de aproximação automático
     if (this.app.phase === 'gs') {
       const { dist } = this.locDev();
-      if (dist < 3) target = this.perf.app;
+      if (dist < 3) target = perf.app;
       else if (dist < 5.5) target = Math.min(target, 160);
       else if (dist < 9) target = Math.min(target, 180);
     }
     target = Math.max(target, this.minSpdNow());
-    const acc = this.perf.accel * (target < this.spd ? 0.8 : 1);
+    const acc = perf.accel * (target < this.spd ? 0.8 : 1);
     if (Math.abs(target - this.spd) < acc * dt) this.spd = target;
     else this.spd += Math.sign(target - this.spd) * acc * dt;
   }
 
   minSpdNow() {
+    const perf = this.effectivePerf();
     if (this.perf.heli) return this.heliState === 'waiting' ? 0 : 40;
-    if (this.app.phase === 'gs') return this.perf.app;
-    if (this.alt < 6000) return this.perf.min + 25;
-    return this.perf.min + 45;
+    if (this.app.phase === 'gs') return perf.app;
+    if (this.alt < 6000) return perf.min + 25;
+    return perf.min + 45;
   }
 
   defaultSpd() {
-    if (this.perf.heli) return Math.min(this.perf.max, 110);
-    if (this.kind === 'dep') return Math.min(this.perf.max, 300);
+    const perf = this.effectivePerf();
+    if (this.perf.heli) return Math.min(perf.max, 110);
+    if (this.kind === 'dep') return Math.min(perf.max, 300);
     if (this.alt > 11000) return 280;
     if (this.alt > 7000) return 230;
     return 200;

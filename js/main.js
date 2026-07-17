@@ -57,6 +57,11 @@ const game = {
   get stats() { return Net.active ? Net.stats : (core ? core.stats : { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 }); },
   get time() { return Net.active ? Net.time : (core ? core.time : 0); },
   get conflictPairs() { return Net.active ? [] : (core ? core.conflictPairs : []); },
+  get airportState() {
+    return Net.active
+      ? (Net.airportState || { state: 'normal', label: 'Normal', active: [] })
+      : (core ? core.airportState : { state: 'normal', label: 'Normal', active: [] });
+  },
 
   clock() {
     if (Net.active) { // mesmo relógio do core: turno começa 13:20:00Z

@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const SCRATCH = __dirname;
-const src = ['engine/data.js', 'engine/aircraft.js', 'engine/commands.js']
+const src = ['engine/data.js', 'engine/emergency.js', 'engine/aircraft.js', 'engine/commands.js', 'engine/core.js']
   .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'))
   .join('\n')
   + '\n' + fs.readFileSync(path.join(SCRATCH, 'test_body.js'), 'utf8');

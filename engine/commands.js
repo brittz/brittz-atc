@@ -23,6 +23,8 @@ const Commands = (() => {
     'ALINHAR','LU','DEC','TO','CTO','DECOLAR','TAKEOFF','TKFF','TKOF',
     'ESPERA','HOLD','ARR','GA','ARREMETER','SID','STAR','HO','TRANSFERIR','TRF',
     'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR','CRZ','CRUZAR','CROSS','CRUZAMENTO',
+    'NATURE','NATUREZA','NAT','SOULS','POB','FUEL','COMB','COMBUSTIVEL','COMBUSTÍVEL',
+    'INTENTIONS','INTENCOES','INTENÇÕES','INTENT','RWY','RUNWAY','PISTA','STATUS','EMERG','EMERGENCIA','EMERGÊNCIA',
   ]);
 
   // encontra a aeronave pelo callsign completo ou sufixo único
@@ -118,7 +120,7 @@ const Commands = (() => {
         }
         case 'DEC': case 'TO': case 'CTO': case 'DECOLAR': case 'TAKEOFF': case 'TKFF': case 'TKOF': {
           const rw = arg && DATA.RUNWAYS[arg] ? arg : null; used = rw ? 2 : 1;
-          r = ac.cmdTakeoff(rw);
+          r = ac.cmdTakeoff(rw, game);
           if (!r.err) atcParts.push('vento ' + game.windStr() + ', autorizado decolagem pista ' + ac.rwy);
           break;
         }
@@ -164,6 +166,36 @@ const Commands = (() => {
         case 'CRZ': case 'CRUZAR': case 'CROSS': case 'CRUZAMENTO': {
           r = ac.cmdCross(); used = 1;
           if (!r.err) atcParts.push('autorizado cruzamento da zona do aeródromo, reporte deixando');
+          break;
+        }
+        case 'NATURE': case 'NATUREZA': case 'NAT': {
+          r = ac.cmdEmergencyQuery(cmd); used = 1;
+          if (!r.err) atcParts.push('say nature of emergency');
+          break;
+        }
+        case 'SOULS': case 'POB': {
+          r = ac.cmdEmergencyQuery(cmd); used = 1;
+          if (!r.err) atcParts.push('souls on board');
+          break;
+        }
+        case 'FUEL': case 'COMB': case 'COMBUSTIVEL': case 'COMBUSTÍVEL': {
+          r = ac.cmdEmergencyQuery(cmd); used = 1;
+          if (!r.err) atcParts.push('fuel remaining');
+          break;
+        }
+        case 'INTENTIONS': case 'INTENCOES': case 'INTENÇÕES': case 'INTENT': {
+          r = ac.cmdEmergencyQuery(cmd); used = 1;
+          if (!r.err) atcParts.push('say intentions');
+          break;
+        }
+        case 'RWY': case 'RUNWAY': case 'PISTA': {
+          r = ac.cmdEmergencyQuery(cmd); used = 1;
+          if (!r.err) atcParts.push('preferred runway');
+          break;
+        }
+        case 'STATUS': case 'EMERG': case 'EMERGENCIA': case 'EMERGÊNCIA': {
+          r = ac.cmdEmergencyQuery(cmd); used = 1;
+          if (!r.err) atcParts.push('say present status');
           break;
         }
         default:
