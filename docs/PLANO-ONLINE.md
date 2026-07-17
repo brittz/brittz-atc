@@ -1,7 +1,7 @@
 # Plano: Login, Banco, Deploy e Multiplayer — ATC Brittz
 
-> Documento de planejamento (2026-07). O jogo atual é 100% client-side e data-driven;
-> este plano descreve a evolução para contas, nuvem e multiplayer cooperativo.
+> Documento de planejamento (2026-07), atualizado em 2026-07-15 com o STATUS DE HANDOFF
+> (§8) para continuidade do desenvolvimento por outra IA/pessoa. Leia o §8 primeiro.
 
 ## 0. Ponto de partida (o que joga a nosso favor)
 
@@ -132,3 +132,91 @@ tolera bem latência.
 **Riscos principais**: escopo do solo (mitigado: fase própria); transcrição de cartas
 reais é trabalhosa (mitigado: começar manual, automatizar com parser depois); custo de
 infra cresce com voz em tempo real (mitigado: texto no MVP).
+
+---
+
+# 8. STATUS DE HANDOFF (2026-07-15)
+
+## 8.1 O que está FEITO e verificado
+
+- **F0/F1 ✅** — Motor extraído para `engine/` (data.js, aircraft.js, commands.js,
+  core.js com a classe `GameCore` headless). Dual browser/Node (globais no browser +
+  `module.exports` sob guard). `js/main.js` é um adaptador que preserva a facade
+  `game` consumida por `js/radar.js` e `js/ui.js` — **esses dois não conhecem o core**.
+- **F3 MVP ✅** — Multiplayer funcional NO AEROPORTO SBCV (não é ainda o cenário
+  TMA-SP do §5): `server/` (HTTP estático + WebSocket `ws` em `/ws`, porta
+  `PORT||8124`, sessões com código de 5 letras, posições TWR/APP/OBS com autoridade
+  por domínio de comando, chat de sessão e privado com rate-limit, snapshots 1 Hz,
+  tick 250 ms, Mongo opcional via `MONGODB_URI` com fallback em memória) +
+  `js/net.js` (cliente WS, lobby, hidratação dos snapshots em instâncias reais de
+  `Aircraft`, dead reckoning entre snapshots).
+- **Integração E2E verificada**: 2 jogadores (browser + cliente ws), comando aplicado
+  no servidor com readback, bloqueio por posição, chat nos dois sentidos.
+- **Testes**: `node tests/run_test.js` → 13 cenários "OK" (motor completo: pouso via
+  STAR/ILS, decolagens, condicionais APOS, RTO, helicópteros etc.). O servidor tem
+  teste próprio que os agentes rodaram via clientes ws (não versionado; recriar se
+  necessário seguindo docs/ARQUITETURA-MP.md §3/§4).
+- **Jogo single-player completo** (F0) com: STARs/SIDs+cartas, ILS, condicionais
+  `APOS` (fixo/NM/pés), subir/descer VIA, RTO, TAXI entre cabeceiras, HO manual,
+  METAR dinâmico + troca de pistas, helicópteros VFR com cruzamento de ATZ, mobile
+  (toque/pinça/roletas), localStorage (prefs + recorde).
+
+## 8.2 PRÓXIMOS PASSOS (em ordem recomendada)
+
+1. **Deploy do MVP** (§4): front + servidor juntos no Fly.io (o server já serve os
+   estáticos — um único processo basta). Criar `Dockerfile` simples (node:22-slim,
+   `CMD node server/index.js`) + `fly launch`. REQUISITO: conta Fly.io do usuário.
+2. **F2 Login Google + Atlas** (§2/§3): implementar OAuth no server (rota
+   `/auth/google` + callback; stub já existe em `server/store.js:authGoogle`),
+   cookie httpOnly JWT, collection `users`, migração do recorde local no primeiro
+   login. REQUISITOS: usuário criar OAuth Client ID no Google Cloud Console
+   (origem = domínio do deploy) e cluster Atlas M0 (`MONGODB_URI`).
+3. **Handoff entre jogadores**: hoje `HO` transfere para o Centro-IA. Evoluir para
+   strip proposta → aceite da outra posição (protocolo `{t:'handoff'}` reservado no
+   §5, ainda NÃO implementado no server/cliente).
+4. **Cenário TMA-SP multi-aeroporto** (§5): novo JSON de cenário com 2+ aeroportos e
+   volumes de jurisdição; exige generalizar `engine/core.js` (hoje 1 aeroporto por
+   core) — provavelmente 1 core por cenário com N pistas/cartas e posição dona por
+   volume.
+5. **F4 Solo** (§6) e **F5 cartas reais** — como planejado.
+
+## 8.3 Requisitos que dependem do USUÁRIO (não codificáveis)
+
+- Conta Fly.io (ou VPS Hetzner) para deploy público.
+- Google Cloud Console → OAuth 2.0 Client ID (para F2).
+- MongoDB Atlas M0 → connection string em `MONGODB_URI` (para persistência real).
+- Domínio próprio (opcional, para TLS/cookies em produção).
+
+## 8.4 Restrições e convenções (NÃO violar)
+
+- **JavaScript puro, sem build/bundler/framework**; scripts clássicos com globais no
+  browser (`DATA, U, Aircraft, Commands, GameCore, Radar, UI, Net, game`).
+  CommonJS (`require`) no Node. Comentários e UI em **pt-BR**, `'use strict'`.
+- **docs/ARQUITETURA-MP.md é o contrato** entre engine/cliente/servidor — atualize-o
+  ANTES de mudar protocolo ou interfaces.
+- **O single-player não pode quebrar**: qualquer mudança no engine deve manter
+  `node tests/run_test.js` 100% OK (adicione cenários novos ao tests/test_body.js).
+- `js/radar.js` e `js/ui.js` não devem conhecer core/rede — falam só com a facade
+  `game` (js/main.js decide entre core local e Net).
+- Snapshot de rede = whitelist do §5 do contrato; nunca serializar o objeto inteiro.
+- Aeroportos são dados (`airports/*.json` + manifesto); o motor não pode ganhar
+  conhecimento hardcoded de aeroporto.
+- Sem custos ocultos: voz = Web Speech local; nada de APIs pagas sem o usuário pedir.
+- Commits em pt-BR, mensagem tipo `feat:`/`fix:`/`docs:`, com
+  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>` (ajuste ao seu modelo);
+  push para https://github.com/brittz/brittz-atc (main).
+- No Windows do usuário: PowerShell 5.1 (cuidado com aspas em `git commit -m`;
+  prefira `git commit -F arquivo`); porta 8123 pode estar ocupada pelo Cursor.
+
+## 8.5 Pendências conhecidas (pequenas)
+
+- MP: `conflictPairs` não vai no snapshot → linhas de conflito não aparecem no radar
+  dos clientes (adicionar ao serialize() e ao contrato §5).
+- MP: score por evento chega como radio 'sys'; recorde local não é atualizado em MP
+  (decisão pendente: recorde é conceito single-player ou por posição no MP?).
+- MP: troca de pistas em uso (setConfig) bloqueada no cliente — decidir quem pode
+  (host? APP?) e expor via protocolo.
+- Cache agressivo do Chrome com `python -m http.server`/server Node sem headers de
+  cache: usuários precisam de Ctrl+F5 após updates (considerar `Cache-Control:
+  no-cache` nos estáticos do server — melhoria de 1 linha em server/index.js).
+- Emergências (aeronave `emergency`) não têm tratamento especial no MP além do SP.
