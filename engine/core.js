@@ -309,9 +309,18 @@ class GameCore {
     if (evolution && evolution.text) this.radioPilot(ac, evolution.text, 0.5);
   }
 
+  onPositionReport(ac, report) {
+    if (!ac || !report) return;
+    this.radioPilot(ac, ac.reportText(report, this), 0.2);
+  }
+
   maybePilotInitiative(ac) {
     if (!ac || !ac.airborne || ac.state === 'done' || !ac.pilotAi) return;
     if (this.time < ac.pilotAi.nextAt) return;
+    if (ac.hasPendingReport && ac.hasPendingReport()) {
+      ac.pilotAi.nextAt = this.time + U.rnd(45, 80);
+      return;
+    }
     let text = null;
     if (ac.emergency && ac.emergency.active) {
       text = Emergency.initiative(ac);
@@ -415,7 +424,7 @@ class GameCore {
     ac.wptExit = wptExit;
     ac.heliAuto = true;
     ac.heliState = 'inbound';
-    ac.crossRequested = false;
+    ac.crossRequested = true;
     ac.crossCleared = false;
     ac.zoneEntered = false;
     this.usedCs.add(cs);
@@ -673,6 +682,7 @@ class GameCore {
         crossRequested: a.crossRequested, crossCleared: a.crossCleared,
         wptExit: a.wptExit, trail: a.trail,
         pending: (a.pending || []).map(p => ({ label: p.label })),
+        reports: (a.reports || []).map(r => ({ label: r.label })),
       })),
     };
   }

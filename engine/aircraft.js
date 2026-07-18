@@ -55,6 +55,8 @@ class Aircraft {
       altAssigned: false,              // altitude explícita antes da decolagem
       holdRwyHdg: false,               // manter proa de pista até a condicional
       pending: [],                     // instruções condicionais (APOS fixo/NM/pés)
+      reports: [],                     // reportes futuros (distância/fixo/altitude/nível)
+      reportedThisTick: false,
       spdMode: null,                   // null | 'min' | 'max' (a critério do comandante)
       trail: [], trailT: 0,
       path: [], pathT: 0,              // histórico completo da rota (linha opcional)
@@ -382,6 +384,83 @@ class Aircraft {
     return { rb: 'Após ' + whenParts.join(', ') + ', ' + p.tokens.join(' ') + extra };
   }
 
+  hasPendingReport() {
+    return !!(this.reports && this.reports.length);
+  }
+
+  addReport(cond) {
+    if (this.reports.length >= 3) return { err: 'já temos três reportes pendentes' };
+    const r = Object.assign({}, cond);
+    if (r.kind === 'dist') {
+      r.label = `reporte ${r.dist} NM do aeródromo`;
+      this.reports.push(r);
+      return { rb: 'Reportaremos a ' + r.dist + ' milhas do aeródromo' };
+    }
+    if (r.kind === 'fix') {
+      r.label = 'reporte sobre ' + r.fix;
+      this.reports.push(r);
+      return { rb: 'Reportaremos sobre ' + r.fix };
+    }
+    if (r.kind === 'alt') {
+      const altText = r.altText || U.fmtAlt(r.alt);
+      const phrase = r.mode === 'leaving'
+        ? 'deixando '
+        : r.mode === 'level'
+          ? 'nivelado em '
+          : 'atingindo ';
+      r.dir = null;
+      r.label = 'reporte ' + phrase + altText;
+      this.reports.push(r);
+      return { rb: 'Reportaremos ' + phrase + altText };
+    }
+    return { err: 'tipo de reporte inválido' };
+  }
+
+  reportText(r, game) {
+    if (r.kind === 'dist') {
+      const d = Math.max(1, Math.round(U.dist(0, 0, this.x, this.y)));
+      const brg = U.brg(0, 0, this.x, this.y);
+      const card = game && game.cardinal ? game.cardinal(brg) : 'setor';
+      return `${d} milhas ao ${card} do aeródromo`;
+    }
+    if (r.kind === 'fix') return 'sobre ' + r.fix;
+    if (r.kind === 'alt') {
+      const altText = r.altText || U.fmtAlt(r.alt);
+      if (r.mode === 'leaving') return 'deixando ' + altText;
+      if (r.mode === 'level') return 'nivelado em ' + altText;
+      return 'atingindo ' + altText;
+    }
+    return 'reporte conforme solicitado';
+  }
+
+  checkReports(game) {
+    this.reportedThisTick = false;
+    for (let i = this.reports.length - 1; i >= 0; i--) {
+      const r = this.reports[i];
+      let hit = false;
+      if (r.kind === 'dist') {
+        hit = U.dist(0, 0, this.x, this.y) <= r.dist;
+      } else if (r.kind === 'fix') {
+        hit = this.fixDist(r.fix) < 1.4;
+      } else if (r.kind === 'alt') {
+        if (r.mode === 'level') {
+          hit = Math.abs(this.alt - r.alt) < 80 && Math.abs(this.vs) < 180;
+        } else {
+          if (r.dir === null) r.dir = this.alt < r.alt ? 1 : -1;
+          if (r.mode === 'leaving')
+            hit = (r.dir > 0 && this.alt >= r.alt + 60) || (r.dir < 0 && this.alt <= r.alt - 60);
+          else
+            hit = (r.dir > 0 && this.alt >= r.alt) || (r.dir < 0 && this.alt <= r.alt);
+        }
+      }
+      if (!hit) continue;
+      this.reports.splice(i, 1);
+      this.reportedThisTick = true;
+      if (game && game.onPositionReport) game.onPositionReport(this, r);
+      else if (game && game.radioPilot) game.radioPilot(this, this.reportText(r, game));
+    }
+  }
+
   checkPending(game) {
     for (let i = this.pending.length - 1; i >= 0; i--) {
       const p = this.pending[i];
@@ -478,6 +557,7 @@ class Aircraft {
     if (this.state === 'takeoff') {
       const perf = this.effectivePerf();
       this.checkPending(game);
+      this.checkReports(game);
       if (this.timer > 0) { this.timer -= dt; return; } // terminando de alinhar
       this.spd = Math.min(this.spd + perf.accel * 2.2 * dt, perf.vr + 15);
       this.moveStraight(dt);
@@ -521,6 +601,7 @@ class Aircraft {
 
     // ------- em voo -------
     this.checkPending(game);
+    this.checkReports(game);
     if (this.kind === 'hel') this.updateHeli(dt, game);
     // saída aos 900 ft: aplica a instrução lateral dada antes da decolagem.
     // Sem instrução (DEC simples), MANTÉM A PROA DE PISTA aguardando o
@@ -575,7 +656,7 @@ class Aircraft {
     };
     if (this.heliState === 'inbound') {
       toExit();
-      if (!this.crossRequested && d < 9) {
+      if (!this.crossRequested && d < 20.5) {
         this.crossRequested = true;
         game.radioPilot(this, `helicóptero a ${Math.round(d)} milhas do aeródromo, ` +
           `${U.fmtAlt(Math.round(this.alt))}, solicitamos cruzamento da zona`);
@@ -584,7 +665,8 @@ class Aircraft {
         if (this.crossCleared) this.heliState = 'crossing';
         else {
           this.heliState = 'waiting';
-          game.radioPilot(this, 'mantendo posição fora da zona, aguardando autorização de cruzamento');
+          if (!this.hasPendingReport() && !this.reportedThisTick)
+            game.radioPilot(this, 'mantendo posição fora da zona, aguardando autorização de cruzamento');
         }
       }
     } else if (this.heliState === 'waiting') {
@@ -668,7 +750,7 @@ class Aircraft {
         if (this.nav.idx >= this.nav.route.length) {
           // fim da rota: mantém o rumo do último trecho
           this.nav = { mode: 'hdg', hdg: this.hdg, turn: null };
-          if (this.kind === 'arr' && this.app.phase === 'none')
+          if (this.kind === 'arr' && this.app.phase === 'none' && !this.hasPendingReport() && !this.reportedThisTick)
             game.radioPilot(this, `cruzando ${fname}, aguardando instruções`);
           return;
         }

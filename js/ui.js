@@ -337,8 +337,11 @@ const UI = (() => {
       $('selEmergencyInfo').classList.add('hidden');
       $('selEmergencyInfo').innerHTML = '';
     }
-    $('selPend').innerHTML = (a.pending || []).map(p => '⏳ ' + p.label).join('<br>');
-    $('selPend').style.display = (a.pending && a.pending.length) ? '' : 'none';
+    const pendingHtml = []
+      .concat((a.pending || []).map(p => '⏳ ' + p.label))
+      .concat((a.reports || []).map(r => '📍 ' + r.label));
+    $('selPend').innerHTML = pendingHtml.join('<br>');
+    $('selPend').style.display = pendingHtml.length ? '' : 'none';
 
     // ações contextuais (o ajuste fino de ALT/PROA/VEL fica nas roletas).
     // Os botões só são recriados quando o conjunto muda — recriar a cada

@@ -10,6 +10,7 @@ const game = {
   onGoAround: (ac, r) => events.push(`GA ${ac.cs}: ${r}`),
   runwayOccupied: () => false,
   windStr: () => '080/9',
+  cardinal: brg => ['norte', 'nordeste', 'leste', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste'][Math.round(U.norm360(brg) / 45) % 8],
 };
 
 let landed = false;
@@ -264,6 +265,72 @@ Commands.parse('PR-LIV CRZ', game);
 let th2 = 0, minSpd = 999;
 while (th2 < 3600 && h2.state !== 'done') { h2.update(0.5, game); th2 += 0.5; if (h2.airborne) minSpd = Math.min(minSpd, h2.spd); }
 console.log(minSpd > 60 && h2.state === 'done' ? `OK HELI PRE-AUTORIZADO (nao parou, vel minima ${Math.round(minSpd)}kt)` : `FALHA HELI2 minSpd=${Math.round(minSpd)} state=${h2.state}`);
+
+// ---------- Position report system ----------
+events.length = 0;
+const rptDist = new Aircraft({
+  cs: 'AZU5511', radio: 'Azul', type: 'E195', kind: 'arr',
+  x: 0, y: -12, alt: 3000, spd: 180, hdg: 0,
+  nav: { mode: 'hdg', hdg: 0, turn: null },
+});
+game.aircraft.push(rptDist);
+const rrDist = Commands.parse('AZU5511 REPORTE 5', game);
+let trd = 0;
+while (trd < 900 && rptDist.reports.length) { rptDist.update(0.5, game); trd += 0.5; }
+const distMsg = events.find(e => e.includes('[AZU5511]') && e.includes('5 milhas ao sul do aeródromo'));
+console.log('REPDIST ->', rrDist.err || rrDist.atcText, '| evento:', distMsg || '(nenhum)');
+console.log(rrDist && rrDist.ok !== false && !rptDist.reports.length && distMsg
+  ? 'OK REPORTE DISTÂNCIA'
+  : 'FALHA REPORTE DISTÂNCIA');
+
+events.length = 0;
+const norte = U.fix('NORTE');
+const rptFix = new Aircraft({
+  cs: 'AZU5512', radio: 'Azul', type: 'E195', kind: 'arr',
+  x: norte[0] - 4, y: norte[1], alt: 4000, spd: 170, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+game.aircraft.push(rptFix);
+const rrFix = Commands.parse('AZU5512 REPORTE NORTE', game);
+let trf = 0;
+while (trf < 600 && rptFix.reports.length) { rptFix.update(0.5, game); trf += 0.5; }
+const fixMsg = events.find(e => e.includes('[AZU5512]') && e.includes('sobre NORTE'));
+console.log('REPFIX  ->', rrFix.err || rrFix.atcText, '| evento:', fixMsg || '(nenhum)');
+console.log(!rptFix.reports.length && fixMsg ? 'OK REPORTE FIXO' : 'FALHA REPORTE FIXO');
+
+events.length = 0;
+const rptAlt = mkDep('GLO7011', 'CACTO1');
+const rrAltRep = Commands.parse('GLO7011 A 7000 REPORTE DEIXANDO 5000 DEC 09R', game);
+let tra = 0;
+while (tra < 900 && rptAlt.reports.length) { rptAlt.update(0.5, game); tra += 0.5; }
+const altMsg = events.find(e => e.includes('[GLO7011]') && e.includes('deixando 5.000 pés'));
+console.log('REPALT  ->', rrAltRep.err || rrAltRep.atcText, '| evento:', altMsg || '(nenhum)');
+console.log(!rptAlt.reports.length && altMsg ? 'OK REPORTE ALTITUDE' : 'FALHA REPORTE ALTITUDE');
+
+events.length = 0;
+const rptFl = new Aircraft({
+  cs: 'GLO7012', radio: 'Gol', type: 'B738', kind: 'dep',
+  x: -6, y: -2, alt: 6000, spd: 220, hdg: 90,
+  state: 'air', nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+rptFl.clrAlt = 8000;
+game.aircraft.push(rptFl);
+const rrFlRep = Commands.parse('GLO7012 REPORTE NIVELADO FL080', game);
+let trl = 0;
+while (trl < 900 && rptFl.reports.length) { rptFl.update(0.5, game); trl += 0.5; }
+const flMsg = events.find(e => e.includes('[GLO7012]') && e.includes('nivelado em FL080'));
+console.log('REPFL   ->', rrFlRep.err || rrFlRep.atcText, '| evento:', flMsg || '(nenhum)');
+console.log(!rptFl.reports.length && flMsg ? 'OK REPORTE NÍVEL' : 'FALHA REPORTE NÍVEL');
+
+events.length = 0;
+const h3 = mkHeli('PR-REP', 22, 0, [-22, 0]);
+Commands.parse('PR-REP REPORTE 5', game);
+let th3 = 0;
+while (th3 < 2400 && !(h3.heliState === 'waiting' && h3.spd < 3)) { h3.update(0.5, game); th3 += 0.5; }
+const rep5Msg = events.find(e => e.includes('[PR-REP]') && e.includes('5 milhas ao leste do aeródromo'));
+const holdMsg = events.find(e => e.includes('[PR-REP]') && e.includes('mantendo posição fora da zona'));
+console.log('REPHELI ->', rep5Msg || '(sem reporte)', '| espera:', holdMsg || '(sem chamada redundante)');
+console.log(rep5Msg && !holdMsg ? 'OK REPORTE HELICÓPTERO (sem chamada redundante)' : 'FALHA REPORTE HELICÓPTERO');
 
 // VIA em chegada continua ok? (regressao)
 const v3 = new Aircraft({ cs:'TAM7003', radio:'LATAM', type:'A320', kind:'arr', x:-40, y:42, alt:16000, spd:290, hdg:120, star:'SABIA1', nav:{mode:'route', route:DATA.STARS.SABIA1.route.map(r=>r.fix), idx:1} });

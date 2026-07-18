@@ -98,7 +98,7 @@ maiúsculas. Sessão morre 60 s depois do último jogador sair.
 Primeiro token do comando (após callsign) define o domínio:
 - **TWR**: ALINHAR/LU, DEC/TO/CTO/DECOLAR/TAKEOFF/TKFF/TKOF, AP/POUSO/CTL,
   ABORTAR/ABT/RTO/REJECT, TAXI/TAXIAR, CRZ/CRUZAR/CROSS/CRUZAMENTO, ARR/GA/ARREMETER
-- **APP**: todo o resto (A, V, P, DIR, VIA, ILS, STAR, SID, ESPERA, HO, APOS…)
+- **APP**: todo o resto (A, V, P, DIR, VIA, ILS, STAR, SID, ESPERA, HO, APOS, REPORTE…)
 - **OBS**: nenhum comando; só chat.
 Regra: se a posição dona do comando estiver ocupada por OUTRO jogador, quem não é o
 dono recebe `{t:'error', msg:'instrução da posição TWR/APP'}`. Se a posição está vaga,
@@ -109,7 +109,7 @@ qualquer jogador (não-OBS) pode dar o comando (cobertura).
 Whitelist (nada além disso): `cs, radio, type, kind, x, y, alt, spd, hdg, vs, clrAlt,
 clrSpd, spdMode, state, nav, app, landClr, star, sid, dest, rwy, emergency, via, stca,
 goingAround, timer, heliState, heliAuto, crossRequested, crossCleared, wptExit,
-trail, pending:[{label}]`.
+trail, pending:[{label}], reports:[{label}]`.
 
 `airportState` do snapshot é um objeto leve `{state:'normal'|'emergency'|'recovery',
 label, active:[callsigns], emergencyCs?, summary?}`. O campo `emergency` da aeronave

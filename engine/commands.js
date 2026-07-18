@@ -23,6 +23,7 @@ const Commands = (() => {
     'ALINHAR','LU','DEC','TO','CTO','DECOLAR','TAKEOFF','TKFF','TKOF',
     'ESPERA','HOLD','ARR','GA','ARREMETER','SID','STAR','HO','TRANSFERIR','TRF',
     'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR','CRZ','CRUZAR','CROSS','CRUZAMENTO',
+    'REPORTE','REPORTAR','REPORT','REP',
     'NATURE','NATUREZA','NAT','SOULS','POB','FUEL','COMB','COMBUSTIVEL','COMBUSTÍVEL',
     'INTENTIONS','INTENCOES','INTENÇÕES','INTENT','RWY','RUNWAY','PISTA','STATUS','EMERG','EMERGENCIA','EMERGÊNCIA',
   ]);
@@ -45,6 +46,37 @@ const Commands = (() => {
     const n = parseInt(tok, 10);
     if (isNaN(n)) return null;
     return n < 400 ? n * 100 : n;
+  }
+
+  function parseReport(tokens, i, ac) {
+    const a = tokens[i + 1];
+    const b = tokens[i + 2];
+    if (!a) return { r: { err: 'REPORTE: informe a condição desejada' }, used: 1 };
+
+    const distTok = a.match(/^(\d+(?:\.\d+)?)NM$/);
+    if (distTok) {
+      const dist = parseFloat(distTok[1]);
+      return { r: ac.addReport({ kind: 'dist', dist }), used: 2, atc: 'reporte a ' + dist + ' milhas do aeródromo' };
+    }
+    if (/^\d+(\.\d+)?$/.test(a)) {
+      const dist = parseFloat(a);
+      if (dist < 400) return { r: ac.addReport({ kind: 'dist', dist }), used: 2, atc: 'reporte a ' + dist + ' milhas do aeródromo' };
+      return { r: { err: 'REPORTE: para altitude use DEIXANDO, ATINGINDO ou NIVELADO' }, used: 2 };
+    }
+    if (a === 'SOBRE' || a === 'CRUZANDO') {
+      if (!b || !U.fix(b)) return { r: { err: 'REPORTE: informe um fixo válido' }, used: b ? 3 : 2 };
+      return { r: ac.addReport({ kind: 'fix', fix: b }), used: 3, atc: 'reporte sobre ' + b };
+    }
+    if (a === 'DEIXANDO' || a === 'ATINGINDO' || a === 'NIVELADO' || a === 'NIVEL') {
+      const alt = parseAlt(b);
+      if (alt === null) return { r: { err: 'REPORTE: altitude inválida' }, used: b ? 3 : 2 };
+      const mode = a === 'DEIXANDO' ? 'leaving' : a === 'ATINGINDO' ? 'reaching' : 'level';
+      const phrase = mode === 'leaving' ? 'deixando ' : mode === 'level' ? 'nivelado em ' : 'atingindo ';
+      const altText = /^FL\d{2,3}$/.test(b) ? b : U.fmtAlt(alt);
+      return { r: ac.addReport({ kind: 'alt', alt, altText, mode }), used: 3, atc: 'reporte ' + phrase + altText };
+    }
+    if (U.fix(a)) return { r: ac.addReport({ kind: 'fix', fix: a }), used: 2, atc: 'reporte sobre ' + a };
+    return { r: { err: 'REPORTE: use distância, fixo, DEIXANDO, ATINGINDO ou NIVELADO' }, used: 2 };
   }
 
   // executa uma sequência de instruções imediatas na aeronave
@@ -166,6 +198,12 @@ const Commands = (() => {
         case 'CRZ': case 'CRUZAR': case 'CROSS': case 'CRUZAMENTO': {
           r = ac.cmdCross(); used = 1;
           if (!r.err) atcParts.push('autorizado cruzamento da zona do aeródromo, reporte deixando');
+          break;
+        }
+        case 'REPORTE': case 'REPORTAR': case 'REPORT': case 'REP': {
+          const rep = parseReport(tokens, i, ac);
+          r = rep.r; used = rep.used;
+          if (!r.err && rep.atc) atcParts.push(rep.atc);
           break;
         }
         case 'NATURE': case 'NATUREZA': case 'NAT': {
