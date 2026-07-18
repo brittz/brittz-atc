@@ -135,6 +135,11 @@ button.primary:hover { background: #1a5a42; }
 #selInfo { color: var(--dim); margin: 2px 0 4px; }
 #selData { font-size: 12px; margin-bottom: 8px; }
 #selEmergency { font-size: 11px; color: var(--alert); margin-bottom: 8px; line-height: 1.45; }
+#selEmergencyInfo {
+  font-size: 11px; color: var(--txt); margin-bottom: 8px; line-height: 1.5;
+  border-top: 1px solid #233947; padding-top: 6px;
+}
+#selEmergencyInfo .ttl { color: var(--warn); display: block; margin-bottom: 3px; }
 #selPend { font-size: 11px; color: var(--warn); margin-bottom: 8px; line-height: 1.5; }
 #selClose {
   position: absolute; top: 6px; right: 6px;

@@ -170,32 +170,32 @@ const Commands = (() => {
         }
         case 'NATURE': case 'NATUREZA': case 'NAT': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
-          if (!r.err) atcParts.push('say nature of emergency');
+          if (!r.err) atcParts.push('informe a natureza da emergência');
           break;
         }
         case 'SOULS': case 'POB': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
-          if (!r.err) atcParts.push('souls on board');
+          if (!r.err) atcParts.push('informe pessoas a bordo');
           break;
         }
         case 'FUEL': case 'COMB': case 'COMBUSTIVEL': case 'COMBUSTÍVEL': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
-          if (!r.err) atcParts.push('fuel remaining');
+          if (!r.err) atcParts.push('informe combustível restante');
           break;
         }
         case 'INTENTIONS': case 'INTENCOES': case 'INTENÇÕES': case 'INTENT': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
-          if (!r.err) atcParts.push('say intentions');
+          if (!r.err) atcParts.push('informe intenções');
           break;
         }
         case 'RWY': case 'RUNWAY': case 'PISTA': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
-          if (!r.err) atcParts.push('preferred runway');
+          if (!r.err) atcParts.push('informe pista preferida');
           break;
         }
         case 'STATUS': case 'EMERG': case 'EMERGENCIA': case 'EMERGÊNCIA': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
-          if (!r.err) atcParts.push('say present status');
+          if (!r.err) atcParts.push('informe a situação atual');
           break;
         }
         default:

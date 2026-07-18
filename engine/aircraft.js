@@ -131,8 +131,8 @@ class Aircraft {
     if (spd === 'MIN') { this.spdMode = 'min'; this.clrSpd = 0; return { rb: 'Reduzindo para a velocidade mínima operacional' }; }
     if (spd === 'MAX') { this.spdMode = 'max'; this.clrSpd = 0; return { rb: 'Acelerando para a velocidade máxima' }; }
     this.spdMode = null;
-    if (spd !== 0 && spd < perf.min) return { err: `unable, nossa mínima atual é ${Math.round(perf.min)} nós` };
-    if (spd > perf.max) return { err: `unable, nossa máxima atual é ${Math.round(perf.max)} nós` };
+    if (spd !== 0 && spd < perf.min) return { err: `impossível, nossa mínima atual é ${Math.round(perf.min)} nós` };
+    if (spd > perf.max) return { err: `impossível, nossa máxima atual é ${Math.round(perf.max)} nós` };
     this.clrSpd = spd;
     if (spd === 0) return { rb: 'Velocidade a nosso critério' };
     const dir = spd < this.spd - 5 ? 'Reduzindo ' : spd > this.spd + 5 ? 'Acelerando ' : 'Mantendo ';

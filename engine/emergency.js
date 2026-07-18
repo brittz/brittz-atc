@@ -45,8 +45,8 @@ const Emergency = (() => {
 
   const TYPES = {
     'bird-strike': {
-      title: 'Bird strike',
-      nature: 'bird strike',
+      title: 'Colisão com aves',
+      nature: 'colisão com aves',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { climbFactor: 0.9 },
@@ -57,7 +57,7 @@ const Emergency = (() => {
     },
     'engine-failure': {
       title: 'Falha de motor',
-      nature: 'engine failure',
+      nature: 'falha de motor',
       declaration: 'MAYDAY',
       severity: 'high',
       effects: { climbFactor: 0.58, maxAlt: 14000, preferredSpeedMax: 250 },
@@ -67,7 +67,7 @@ const Emergency = (() => {
     },
     'engine-fire': {
       title: 'Incêndio em motor',
-      nature: 'engine fire',
+      nature: 'incêndio em motor',
       declaration: 'MAYDAY',
       severity: 'critical',
       effects: { climbFactor: 0.52, maxAlt: 11000, preferredSpeedMax: 230 },
@@ -77,7 +77,7 @@ const Emergency = (() => {
     },
     'hydraulic-failure': {
       title: 'Falha hidráulica',
-      nature: 'hydraulic failure',
+      nature: 'falha hidráulica',
       declaration: 'PAN PAN',
       severity: 'high',
       effects: { turnRateFactor: 0.62, responseDelayFactor: 1.15, preferredSpeedMinAdd: 10 },
@@ -87,7 +87,7 @@ const Emergency = (() => {
     },
     'electrical-failure': {
       title: 'Falha elétrica',
-      nature: 'electrical failure',
+      nature: 'falha elétrica',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { responseDelayFactor: 1.1 },
@@ -97,7 +97,7 @@ const Emergency = (() => {
     },
     'landing-gear': {
       title: 'Problema no trem de pouso',
-      nature: 'landing gear issue',
+      nature: 'problema no trem de pouso',
       declaration: 'PAN PAN',
       severity: 'high',
       effects: { preferLongRunway: true, approachSpeedAdd: 18, preferredSpeedMinAdd: 12 },
@@ -107,7 +107,7 @@ const Emergency = (() => {
     },
     'flap-failure': {
       title: 'Falha de flaps',
-      nature: 'flap failure',
+      nature: 'falha de flaps',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { approachSpeedAdd: 22, preferredSpeedMinAdd: 15 },
@@ -117,7 +117,7 @@ const Emergency = (() => {
     },
     depressurization: {
       title: 'Despressurização',
-      nature: 'depressurization',
+      nature: 'despressurização',
       declaration: 'MAYDAY',
       severity: 'high',
       effects: { maxAlt: 11000 },
@@ -127,7 +127,7 @@ const Emergency = (() => {
     },
     medical: {
       title: 'Emergência médica',
-      nature: 'medical emergency',
+      nature: 'emergência médica',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: {},
@@ -137,7 +137,7 @@ const Emergency = (() => {
     },
     'low-fuel': {
       title: 'Pouco combustível',
-      nature: 'minimum fuel',
+      nature: 'pouco combustível',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: {},
@@ -148,7 +148,7 @@ const Emergency = (() => {
     },
     'cabin-smoke': {
       title: 'Fumaça na cabine',
-      nature: 'smoke in cabin',
+      nature: 'fumaça na cabine',
       declaration: 'PAN PAN',
       severity: 'high',
       effects: { preferredSpeedMax: 240 },
@@ -158,7 +158,7 @@ const Emergency = (() => {
     },
     'cockpit-smoke': {
       title: 'Fumaça no cockpit',
-      nature: 'smoke in cockpit',
+      nature: 'fumaça no cockpit',
       declaration: 'MAYDAY',
       severity: 'critical',
       effects: { preferredSpeedMax: 220, responseDelayFactor: 1.2 },
@@ -168,7 +168,7 @@ const Emergency = (() => {
     },
     'bomb-threat': {
       title: 'Ameaça de bomba',
-      nature: 'bomb threat',
+      nature: 'ameaça de bomba',
       declaration: 'PAN PAN',
       severity: 'high',
       effects: { preferLongRunway: true },
@@ -178,7 +178,7 @@ const Emergency = (() => {
     },
     windshear: {
       title: 'Windshear',
-      nature: 'windshear encounter',
+      nature: 'windshear reportado',
       declaration: 'MAYDAY',
       severity: 'high',
       effects: { preferredSpeedMinAdd: 10, preferredSpeedMax: 220 },
@@ -188,7 +188,7 @@ const Emergency = (() => {
     },
     hail: {
       title: 'Granizo',
-      nature: 'hail encounter',
+      nature: 'encontro com granizo',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { preferredSpeedMax: 240 },
@@ -198,7 +198,7 @@ const Emergency = (() => {
     },
     'severe-turbulence': {
       title: 'Turbulência severa',
-      nature: 'severe turbulence',
+      nature: 'turbulência severa',
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { turnRateFactor: 0.75, preferredSpeedMax: 240 },
@@ -237,8 +237,8 @@ const Emergency = (() => {
   }
 
   function fmtFuel(min) {
-    if (min <= 15) return 'fuel critical, endurance ' + min + ' minutes';
-    return 'fuel remaining ' + min + ' minutes';
+    if (min <= 15) return 'combustível crítico, autonomia de ' + min + ' minutos';
+    return 'combustível restante ' + min + ' minutos';
   }
 
   function preferredRunway(game, ac, effects) {
@@ -255,10 +255,10 @@ const Emergency = (() => {
 
   function buildIntentions(ac, nature, runway) {
     if (ac.kind === 'dep') {
-      if (nature === 'engine fire' || nature === 'engine failure') return 'request immediate return for landing';
-      return 'request vectors to return and land as soon as possible';
+      if (nature === 'incêndio em motor' || nature === 'falha de motor') return 'solicitamos retorno imediato para pouso';
+      return 'solicitamos vetores para retorno e pouso o mais breve possível';
     }
-    return 'request priority approach and landing' + (runway ? ' runway ' + runway : '');
+    return 'solicitamos prioridade para aproximação e pouso' + (runway ? ' na pista ' + runway : '');
   }
 
   function effectScale(sev) {
@@ -347,7 +347,7 @@ const Emergency = (() => {
         fuelMin: raw.info && raw.info.fuelMin != null ? raw.info.fuelMin : 30,
         runway: raw.info ? raw.info.runway : null,
         nature: raw.info && raw.info.nature ? raw.info.nature : profile.nature,
-        intentions: raw.info && raw.info.intentions ? raw.info.intentions : 'request priority landing',
+        intentions: raw.info && raw.info.intentions ? raw.info.intentions : 'solicitamos prioridade para pouso',
       },
       effects,
       flags: { coordinated: false, recovered: false, ...((raw.flags) || {}) },
@@ -399,9 +399,9 @@ const Emergency = (() => {
 
   function statusText(e) {
     if (e.outcome) return `${e.title}, ${e.outcome}`;
-    if (e.evolution === 'worsening') return `${e.title}, situation worsening`;
-    if (e.evolution === 'improving') return `${e.title}, condition improving`;
-    return `${e.title}, currently stable`;
+    if (e.evolution === 'worsening') return `${e.title}, situação piorando`;
+    if (e.evolution === 'improving') return `${e.title}, condição melhorando`;
+    return `${e.title}, condição estável no momento`;
   }
 
   function normalizeQuery(q) {
@@ -418,13 +418,13 @@ const Emergency = (() => {
 
   function atcPrompt(query) {
     return {
-      nature: 'say nature of emergency',
-      souls: 'souls on board',
-      fuel: 'fuel remaining',
-      intentions: 'say intentions',
-      runway: 'preferred runway',
-      status: 'say present status',
-    }[query] || 'say again';
+      nature: 'informe a natureza da emergência',
+      souls: 'informe pessoas a bordo',
+      fuel: 'informe combustível restante',
+      intentions: 'informe intenções',
+      runway: 'informe pista preferida',
+      status: 'informe a situação atual',
+    }[query] || 'repita a informação';
   }
 
   function answer(ac, queryToken) {
@@ -436,10 +436,10 @@ const Emergency = (() => {
     e.answers[q] = true;
     let rb = '';
     if (q === 'nature') rb = e.info.nature;
-    else if (q === 'souls') rb = 'souls on board ' + e.info.souls;
+    else if (q === 'souls') rb = 'pessoas a bordo ' + e.info.souls;
     else if (q === 'fuel') rb = fmtFuel(e.info.fuelMin);
     else if (q === 'intentions') rb = e.info.intentions;
-    else if (q === 'runway') rb = e.info.runway ? 'prefer runway ' + e.info.runway : 'no runway preference';
+    else if (q === 'runway') rb = e.info.runway ? 'preferimos a pista ' + e.info.runway : 'sem preferência de pista';
     else rb = statusText(e);
     return { rb };
   }
@@ -478,9 +478,9 @@ const Emergency = (() => {
   }
 
   function progressReport(e) {
-    if (e.evolution === 'worsening') return 'emergency worsening, request priority handling';
-    if (e.evolution === 'improving') return 'situation improving, continuing approach';
-    return 'emergency continuing, no significant change';
+    if (e.evolution === 'worsening') return 'emergência piorando, solicitamos prioridade máxima';
+    if (e.evolution === 'improving') return 'situação melhorando, mantendo a aproximação';
+    return 'emergência em andamento, sem mudanças significativas';
   }
 
   function validateApproach(ac, rwy) {
@@ -490,7 +490,7 @@ const Emergency = (() => {
       const pref = DATA.RUNWAYS[e.info.runway];
       const got = DATA.RUNWAYS[rwy];
       if (pref && got && pref.len > got.len) {
-        return 'unable pista ' + rwy + ', solicitamos ' + e.info.runway;
+        return 'impossível aceitar a pista ' + rwy + ', solicitamos ' + e.info.runway;
       }
     }
     return null;
@@ -509,7 +509,7 @@ const Emergency = (() => {
     if ((profile.improveChance || 0) > 0 && improveRoll < profile.improveChance) {
       e.evolution = 'improving';
       if (sevRank > 0) e.severity = shiftSeverity(e.severity, -1);
-      if (e.kind === 'cabin-smoke' && e.severity === 'low') e.resultNote = 'smoke dissipating';
+      if (e.kind === 'cabin-smoke' && e.severity === 'low') e.resultNote = 'fumaça dissipando';
       changed = true;
     } else if ((profile.worsenChance || 0) > 0 && worsenRoll < profile.worsenChance + sevRank * 0.04) {
       e.evolution = 'worsening';
@@ -525,7 +525,7 @@ const Emergency = (() => {
 
     if (e.info && e.info.fuelMin != null) e.info.fuelMin = Math.max(5, e.info.fuelMin - Math.round(U.rnd(2, 6)));
     e.effects = applySeverityToEffects(getProfile(e.kind).effects || {}, e.severity);
-    if (e.kind === 'low-fuel' && rankSeverity(e.severity) >= 3) e.info.nature = 'fuel critical';
+    if (e.kind === 'low-fuel' && rankSeverity(e.severity) >= 3) e.info.nature = 'combustível crítico';
     ac.emergency = e;
     return { changed, text: progressReport(e) };
   }
@@ -533,10 +533,10 @@ const Emergency = (() => {
   function initiative(ac) {
     const e = hydrate(ac.emergency);
     if (!e || !e.active) return null;
-    if (e.stage === 'declared' && !e.answers.nature) return `${e.declaration}, repeating, ${e.info.nature}`;
-    if (e.stage === 'identified' && !e.answers.intentions) return 'request priority vectors';
-    if (e.stage === 'vectoring' && e.info.runway) return 'request direct approach runway ' + e.info.runway;
-    if (e.stage === 'approach' && e.evolution === 'worsening') return 'unable delay, continuing for landing';
+    if (e.stage === 'declared' && !e.answers.nature) return `${e.declaration}, repetindo, ${e.info.nature}`;
+    if (e.stage === 'identified' && !e.answers.intentions) return 'solicitamos vetores prioritários';
+    if (e.stage === 'vectoring' && e.info.runway) return 'solicitamos aproximação direta para a pista ' + e.info.runway;
+    if (e.stage === 'approach' && e.evolution === 'worsening') return 'impossível atraso, prosseguindo para pouso';
     return null;
   }
 
@@ -559,7 +559,7 @@ const Emergency = (() => {
     const e = hydrate(ac.emergency);
     if (!e || !e.active) return null;
     const p = perf(ac.perf, e);
-    if (alt > p.maxAlt) return 'unable, com a emergência nossa máxima segura é ' + U.fmtAlt(p.maxAlt);
+    if (alt > p.maxAlt) return 'impossível, com a emergência nossa máxima segura é ' + U.fmtAlt(p.maxAlt);
     return null;
   }
 
@@ -569,8 +569,30 @@ const Emergency = (() => {
     const p = perf(ac.perf, e);
     const diff = Math.abs(U.adiff(ac.hdg, hdg));
     if (p.turnRate < 2.1 && ac.spd > 210 && diff > 120)
-      return 'unable curva tão fechada, solicitamos vetores mais amplos';
+      return 'impossível cumprir curva tão fechada, solicitamos vetores mais amplos';
     return null;
+  }
+
+  function queryEntries(e) {
+    if (!e) return [];
+    return [
+      { key: 'nature', label: 'Natureza', value: e.info.nature },
+      { key: 'souls', label: 'Pessoas a bordo', value: String(e.info.souls) },
+      { key: 'fuel', label: 'Combustível', value: fmtFuel(e.info.fuelMin) },
+      { key: 'intentions', label: 'Intenções', value: e.info.intentions },
+      { key: 'runway', label: 'Pista preferida', value: e.info.runway ? e.info.runway : 'Sem preferência' },
+      { key: 'status', label: 'Situação', value: statusText(e) },
+    ];
+  }
+
+  function availableQuickActions(emg) {
+    if (!emg || !emg.active) return [];
+    return QUICK_ACTIONS.filter(it => {
+      const key = normalizeQuery(it.cmd);
+      if (!key) return false;
+      if (key === 'status') return true;
+      return !emg.answers[key];
+    });
   }
 
   function operationalState(game) {
@@ -614,6 +636,8 @@ const Emergency = (() => {
     validateAltitude,
     validateHeading,
     validateApproach,
+    queryEntries,
+    availableQuickActions,
     operationalState,
     normalizeQuery,
     summaryText,

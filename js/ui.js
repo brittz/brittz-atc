@@ -127,6 +127,21 @@ const UI = (() => {
     return `${a.emergency.title || 'Emergência'} · ${Emergency.labelSeverity(a.emergency.severity || 'medium')} · ${Emergency.labelStage(a.emergency.stage || 'declared')}`;
   }
 
+  function emergencyEvolutionLabel(ev) {
+    return { stable: 'estável', improving: 'melhorando', worsening: 'piorando' }[ev] || ev || '';
+  }
+
+  function emergencyInfoHtml(a) {
+    if (!a.emergency) return '';
+    const entries = Emergency.queryEntries(a.emergency).filter(it => {
+      if (it.key === 'status') return true;
+      return !!(a.emergency.answers && a.emergency.answers[it.key]);
+    });
+    if (!entries.length) return '';
+    return '<span class="ttl">Informações da emergência</span>' +
+      entries.map(it => `<div><b>${it.label}:</b> ${it.value}</div>`).join('');
+  }
+
   // ---------------- strips ----------------
   // Os elementos são REUTILIZADOS entre atualizações (reconciliação): destruir
   // e recriar o DOM a cada refresh engolia cliques que estivessem em andamento.
@@ -311,11 +326,16 @@ const UI = (() => {
     if (a.emergency) {
       $('selEmergency').classList.remove('hidden');
       $('selEmergency').textContent = emergencySummary(a) +
-        (a.emergency.evolution ? ' · ' + a.emergency.evolution : '') +
+        (a.emergency.evolution ? ' · ' + emergencyEvolutionLabel(a.emergency.evolution) : '') +
         (a.emergency.info && a.emergency.info.runway ? ' · prefere ' + a.emergency.info.runway : '');
+      const infoHtml = emergencyInfoHtml(a);
+      $('selEmergencyInfo').classList.toggle('hidden', !infoHtml);
+      $('selEmergencyInfo').innerHTML = infoHtml;
     } else {
       $('selEmergency').classList.add('hidden');
       $('selEmergency').textContent = '';
+      $('selEmergencyInfo').classList.add('hidden');
+      $('selEmergencyInfo').innerHTML = '';
     }
     $('selPend').innerHTML = (a.pending || []).map(p => '⏳ ' + p.label).join('<br>');
     $('selPend').style.display = (a.pending && a.pending.length) ? '' : 'none';
@@ -358,7 +378,7 @@ const UI = (() => {
         btn('Transferir ao Centro', 'HO', 'good');
       }
       if (a.emergency) {
-        Emergency.QUICK_ACTIONS.forEach(it => btn(it.label, it.cmd, it.cls));
+        Emergency.availableQuickActions(a.emergency).forEach(it => btn(it.label, it.cmd, it.cls));
       }
       btn('V mín', 'V MIN', 'spd');
       btn('Vel. livre', 'V LIVRE', 'spd');
