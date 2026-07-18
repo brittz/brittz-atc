@@ -15,6 +15,56 @@ if (typeof DATA === 'undefined' && typeof require !== 'undefined') {
 }
 
 const Commands = (() => {
+  const WORDS = {
+    optional: new Set(['AUTORIZADO', 'AUTORIZADA', 'CLEARED', 'PARA', 'ATE', 'AT', 'TO', 'FOR', 'NO', 'NA', 'EM', 'THE', 'PLEASE', 'FAVOR', 'CONTINUE', 'CONTINUE']),
+    optionalJoin: new Set(['E', 'AND']),
+    runway: new Set(['RWY', 'RUNWAY', 'PISTA']),
+    miles: new Set(['NM', 'NM.', 'MILHA', 'MILHAS', 'MILE', 'MILES']),
+    feet: new Set(['PE', 'PES', 'PES.', 'FT', 'FEET']),
+    knots: new Set(['KT', 'KTS', 'KNOT', 'KNOTS', 'NO', 'NOS']),
+    maintain: new Set(['MANTENHA', 'MANTER', 'MAINTAIN']),
+    climb: new Set(['SUBA', 'SUBIR', 'SUBIDA', 'CLIMB', 'CLB']),
+    descend: new Set(['DESCA', 'DESCER', 'DESCIDA', 'DESCEND', 'DESCENT', 'DES']),
+    speed: new Set(['V', 'VEL', 'SPD', 'SPEED', 'VELOCIDADE']),
+    heading: new Set(['P', 'PROA', 'H', 'HDG', 'HEADING']),
+    direct: new Set(['DIR', 'DCT', 'DIRETO', 'DIRECT']),
+    proceed: new Set(['PROSSIGA', 'PROCEED', 'VOE', 'FLY']),
+    via: new Set(['VIA']),
+    ils: new Set(['ILS']),
+    land: new Set(['AP', 'POUSO', 'POUSAR', 'LAND', 'LANDING']),
+    lineup: new Set(['ALINHAR', 'ALINHE', 'LINEUP']),
+    wait: new Set(['AGUARDE', 'MANTENHA', 'HOLD', 'WAIT']),
+    takeoff: new Set(['DEC', 'DECOLAGEM', 'DECOLAR', 'TAKEOFF', 'TKOF', 'TKFF', 'TKOF']),
+    hold: new Set(['ESPERA', 'HOLD']),
+    goAround: new Set(['ARR', 'GA', 'ARREMETER', 'ARREMETA', 'GOAROUND']),
+    sid: new Set(['SID']),
+    star: new Set(['STAR']),
+    handoff: new Set(['HO', 'TRANSFERIR', 'TRF', 'CENTER', 'CENTRO']),
+    abort: new Set(['ABORTAR', 'ABT', 'RTO', 'REJECT']),
+    taxi: new Set(['TAXI', 'TAXIAR']),
+    cross: new Set(['CRZ', 'CRUZAR', 'CROSS', 'CRUZAMENTO']),
+    report: new Set(['REPORTE', 'REPORTAR', 'REPORT', 'REP']),
+    after: new Set(['APOS', 'AFTER']),
+    reaching: new Set(['ATINGINDO', 'ATINGIR', 'REACHING', 'REACH']),
+    leaving: new Set(['DEIXANDO', 'LEAVING']),
+    level: new Set(['NIVELADO', 'LEVEL', 'LEVELLED', 'LEVELED']),
+    min: new Set(['MIN', 'MINIMA', 'MINIMO', 'MINIMUM']),
+    max: new Set(['MAX', 'MAXIMA', 'MAXIMO', 'MAXIMUM']),
+    free: new Set(['LIVRE', 'FREE']),
+  };
+
+  const CONDITION_MODE = {
+    ATINGINDO: 'reaching',
+    ATINGIR: 'reaching',
+    REACHING: 'reaching',
+    REACH: 'reaching',
+    DEIXANDO: 'leaving',
+    LEAVING: 'leaving',
+    NIVELADO: 'level',
+    LEVEL: 'level',
+    LEVELLED: 'level',
+    LEVELED: 'level',
+  };
 
   const KNOWN = new Set([
     'A','ALT','D','S','DESCER','SUBIR','V','VEL','SPD',
@@ -28,9 +78,323 @@ const Commands = (() => {
     'INTENTIONS','INTENCOES','INTENÇÕES','INTENT','RWY','RUNWAY','PISTA','STATUS','EMERG','EMERGENCIA','EMERGÊNCIA',
   ]);
 
+  function fold(s) {
+    return String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[.,;:!?]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function inSet(token, set) {
+    return !!token && set.has(token);
+  }
+
+  function skipWords(tokens, i, sets) {
+    let j = i;
+    while (j < tokens.length && sets.some(set => inSet(tokens[j], set))) j++;
+    return j;
+  }
+
+  function nextMeaningful(tokens, i) {
+    return skipWords(tokens, i, [WORDS.optional, WORDS.optionalJoin]);
+  }
+
+  function parseAltPhrase(tokens, i) {
+    let j = nextMeaningful(tokens, i);
+    if (tokens[j] === 'FL' && /^\d{2,3}$/.test(tokens[j + 1] || ''))
+      return { token: 'FL' + parseInt(tokens[j + 1], 10), next: j + 2 };
+    if (/^FL\d{2,3}$/.test(tokens[j] || '')) return { token: 'FL' + parseInt(tokens[j].slice(2), 10), next: j + 1 };
+    if (/^\d+$/.test(tokens[j] || '')) {
+      const n = parseInt(tokens[j], 10);
+      if (n < 400 && !inSet(tokens[j + 1], WORDS.feet)) return null;
+      j++;
+      if (inSet(tokens[j], WORDS.feet)) j++;
+      return { token: String(n), next: j };
+    }
+    return null;
+  }
+
+  function parseRunwayPhrase(tokens, i, fallback) {
+    let j = nextMeaningful(tokens, i);
+    if (inSet(tokens[j], WORDS.runway)) j = nextMeaningful(tokens, j + 1);
+    if (tokens[j] && DATA.RUNWAYS[tokens[j]]) return { token: tokens[j], next: j + 1 };
+    return { token: fallback || null, next: i };
+  }
+
+  function parseFixPhrase(tokens, i) {
+    const j = nextMeaningful(tokens, i);
+    if (tokens[j] && U.fix(tokens[j])) return { token: tokens[j], next: j + 1 };
+    return null;
+  }
+
+  function parseSpeedPhrase(tokens, i) {
+    let j = nextMeaningful(tokens, i);
+    if (inSet(tokens[j], WORDS.speed)) j = nextMeaningful(tokens, j + 1);
+    if (inSet(tokens[j], WORDS.min)) return { token: 'MIN', next: j + 1 };
+    if (inSet(tokens[j], WORDS.max)) return { token: 'MAX', next: j + 1 };
+    if (inSet(tokens[j], WORDS.free)) return { token: 'LIVRE', next: j + 1 };
+    if (/^\d+$/.test(tokens[j] || '')) {
+      const num = parseInt(tokens[j], 10);
+      j++;
+      if (inSet(tokens[j], WORDS.knots)) j++;
+      return { token: String(num), next: j };
+    }
+    return null;
+  }
+
+  function parseCondition(tokens, i) {
+    let j = i;
+    let mode = null;
+    if (inSet(tokens[j], WORDS.after)) {
+      j = nextMeaningful(tokens, j + 1);
+    } else {
+      if (tokens[j] === 'AO') j = nextMeaningful(tokens, j + 1);
+      if (!CONDITION_MODE[tokens[j]]) return null;
+      mode = CONDITION_MODE[tokens[j]];
+      j = nextMeaningful(tokens, j + 1);
+    }
+
+    if (CONDITION_MODE[tokens[j]]) {
+      mode = CONDITION_MODE[tokens[j]];
+      j = nextMeaningful(tokens, j + 1);
+    }
+
+    if (tokens[j] && U.fix(tokens[j])) {
+      const cond = [tokens[j]];
+      j = nextMeaningful(tokens, j + 1);
+      if (/^\d+(\.\d+)?$/.test(tokens[j] || '') && !mode) {
+        cond.push(String(parseFloat(tokens[j])));
+        j++;
+        if (inSet(tokens[j], WORDS.miles)) j++;
+      }
+      return { condTokens: cond, next: j };
+    }
+
+    if (/^\d+(\.\d+)?$/.test(tokens[j] || '') && !mode) {
+      const n = parseFloat(tokens[j]);
+      if (n < 400 && !inSet(tokens[j + 1], WORDS.feet)) {
+        j++;
+        if (inSet(tokens[j], WORDS.miles)) j++;
+        return { condTokens: [String(n)], next: j };
+      }
+    }
+
+    const alt = parseAltPhrase(tokens, j);
+    if (!alt) return null;
+    const condTokens = [];
+    if (mode === 'leaving') condTokens.push('DEIXANDO');
+    else if (mode === 'level') condTokens.push('NIVELADO');
+    else if (mode === 'reaching') condTokens.push('ATINGINDO');
+    condTokens.push(alt.token);
+    return { condTokens, next: alt.next };
+  }
+
+  function canonicalizeTokens(tokens) {
+    const out = [];
+    let i = 0;
+
+    while (i < tokens.length) {
+      const t = tokens[i];
+      if (!t) { i++; continue; }
+
+      const cond = parseCondition(tokens, i);
+      if (cond) {
+        out.push('APOS', ...cond.condTokens);
+        const rest = canonicalizeTokens(tokens.slice(cond.next));
+        out.push(...rest);
+        break;
+      }
+      if (inSet(t, WORDS.after)) { out.push('APOS'); i++; continue; }
+
+      if (inSet(t, WORDS.optional) || inSet(t, WORDS.optionalJoin)) { i++; continue; }
+
+      if (inSet(t, WORDS.maintain)) {
+        const j = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j], WORDS.heading) || /^\d{1,3}$/.test(tokens[j] || '')) {
+          const arg = inSet(tokens[j], WORDS.heading) ? nextMeaningful(tokens, j + 1) : j;
+          if (/^\d{1,3}$/.test(tokens[arg] || '')) { out.push('P', tokens[arg]); i = arg + 1; continue; }
+        }
+        if (inSet(tokens[j], WORDS.speed) || inSet(tokens[j], WORDS.min) || inSet(tokens[j], WORDS.max) || inSet(tokens[j], WORDS.free)) {
+          const spd = parseSpeedPhrase(tokens, j);
+          if (spd) { out.push('V', spd.token); i = spd.next; continue; }
+        }
+        if (inSet(tokens[j], WORDS.via) || inSet(tokens[j], WORDS.sid) || inSet(tokens[j], WORDS.star)) {
+          out.push('VIA');
+          i = j + 1;
+          if (inSet(tokens[j], WORDS.via)) i = nextMeaningful(tokens, j + 1);
+          if (inSet(tokens[i], WORDS.sid) || inSet(tokens[i], WORDS.star)) i++;
+          continue;
+        }
+        const alt = parseAltPhrase(tokens, i + 1);
+        if (alt) { out.push('A', alt.token); i = alt.next; continue; }
+        i++;
+        continue;
+      }
+
+      if (inSet(t, WORDS.climb) || inSet(t, WORDS.descend)) {
+        const j = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j], WORDS.via) || inSet(tokens[j], WORDS.sid) || inSet(tokens[j], WORDS.star)) {
+          out.push('VIA');
+          i = j + 1;
+          if (inSet(tokens[j], WORDS.via)) i = nextMeaningful(tokens, j + 1);
+          if (inSet(tokens[i], WORDS.sid) || inSet(tokens[i], WORDS.star)) i++;
+          continue;
+        }
+        const alt = parseAltPhrase(tokens, i + 1);
+        if (alt) { out.push('A', alt.token); i = alt.next; continue; }
+      }
+
+      if (inSet(t, WORDS.speed)) {
+        const spd = parseSpeedPhrase(tokens, i + 1);
+        if (spd) { out.push('V', spd.token); i = spd.next; continue; }
+      }
+      if (t === 'REDUZA' || t === 'REDUZIR' || t === 'SLOW') {
+        const spd = parseSpeedPhrase(tokens, i + 1);
+        if (spd) { out.push('V', spd.token); i = spd.next; continue; }
+      }
+      if (t === 'ACELERE' || t === 'ACELERAR') {
+        const spd = parseSpeedPhrase(tokens, i + 1);
+        if (spd) { out.push('V', spd.token); i = spd.next; continue; }
+      }
+
+      if (inSet(t, WORDS.heading)) {
+        const j = nextMeaningful(tokens, i + 1);
+        if (/^\d{1,3}$/.test(tokens[j] || '')) { out.push('P', tokens[j]); i = j + 1; continue; }
+        const fix = parseFixPhrase(tokens, i + 1);
+        if (fix) { out.push('P', fix.token); i = fix.next; continue; }
+      }
+
+      if (inSet(t, WORDS.proceed)) {
+        const j = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j], WORDS.direct)) {
+          const fix = parseFixPhrase(tokens, j + 1);
+          if (fix) { out.push('DIR', fix.token); i = fix.next; continue; }
+        }
+        const fix = parseFixPhrase(tokens, i + 1);
+        if (fix) { out.push('DIR', fix.token); i = fix.next; continue; }
+      }
+
+      if (inSet(t, WORDS.direct)) {
+        const fix = parseFixPhrase(tokens, i + 1);
+        if (fix) { out.push('DIR', fix.token); i = fix.next; continue; }
+      }
+
+      if (inSet(t, WORDS.via)) {
+        out.push('VIA');
+        i = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[i], WORDS.sid) || inSet(tokens[i], WORDS.star)) i++;
+        continue;
+      }
+
+      if (inSet(t, WORDS.ils)) {
+        const rw = parseRunwayPhrase(tokens, i + 1);
+        out.push('ILS');
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : i + 1;
+        continue;
+      }
+
+      if (inSet(t, WORDS.land)) {
+        const rw = parseRunwayPhrase(tokens, i + 1);
+        out.push('AP');
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : i + 1;
+        continue;
+      }
+
+      if (inSet(t, WORDS.lineup)) {
+        const j = nextMeaningful(tokens, i + 1);
+        const rw = parseRunwayPhrase(tokens, inSet(tokens[j], WORDS.wait) ? j + 1 : i + 1);
+        out.push('ALINHAR');
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : j + (inSet(tokens[j], WORDS.wait) ? 1 : 0);
+        continue;
+      }
+
+      if (inSet(t, WORDS.takeoff)) {
+        const rw = parseRunwayPhrase(tokens, i + 1);
+        out.push('DEC');
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : i + 1;
+        continue;
+      }
+
+      if (inSet(t, WORDS.hold)) {
+        const fix = parseFixPhrase(tokens, i + 1);
+        out.push('ESPERA');
+        if (fix) out.push(fix.token);
+        i = fix ? fix.next : i + 1;
+        continue;
+      }
+
+      if (inSet(t, WORDS.goAround)) { out.push('ARR'); i++; continue; }
+      if (inSet(t, WORDS.sid)) {
+        const j = nextMeaningful(tokens, i + 1);
+        out.push('SID');
+        if (tokens[j]) out.push(tokens[j]);
+        i = tokens[j] ? j + 1 : i + 1;
+        continue;
+      }
+      if (inSet(t, WORDS.star)) {
+        const j = nextMeaningful(tokens, i + 1);
+        out.push('STAR');
+        if (tokens[j]) out.push(tokens[j]);
+        i = tokens[j] ? j + 1 : i + 1;
+        continue;
+      }
+      if (inSet(t, WORDS.handoff)) { out.push('HO'); i++; continue; }
+      if (inSet(t, WORDS.abort)) { out.push('ABORTAR'); i++; continue; }
+
+      if (inSet(t, WORDS.taxi)) {
+        const rw = parseRunwayPhrase(tokens, i + 1);
+        out.push('TAXI');
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : i + 1;
+        continue;
+      }
+
+      if (inSet(t, WORDS.cross)) { out.push('CRZ'); i++; continue; }
+
+      if (inSet(t, WORDS.report)) {
+        out.push('REPORTE');
+        const j = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j], WORDS.leaving)) {
+          const alt = parseAltPhrase(tokens, j + 1);
+          if (alt) { out.push('DEIXANDO', alt.token); i = alt.next; continue; }
+        }
+        if (inSet(tokens[j], WORDS.reaching)) {
+          const alt = parseAltPhrase(tokens, j + 1);
+          if (alt) { out.push('ATINGINDO', alt.token); i = alt.next; continue; }
+        }
+        if (inSet(tokens[j], WORDS.level)) {
+          const alt = parseAltPhrase(tokens, j + 1);
+          if (alt) { out.push('NIVELADO', alt.token); i = alt.next; continue; }
+        }
+        const fix = parseFixPhrase(tokens, j);
+        if (fix) { out.push(fix.token); i = fix.next; continue; }
+        if (/^\d+(\.\d+)?$/.test(tokens[j] || '')) {
+          out.push(String(parseFloat(tokens[j])));
+          i = j + 1;
+          if (inSet(tokens[i], WORDS.miles)) i++;
+          continue;
+        }
+        i = j;
+        continue;
+      }
+
+      if (t === 'FL' && /^\d{2,3}$/.test(tokens[i + 1] || '')) { out.push('A', 'FL' + parseInt(tokens[i + 1], 10)); i += 2; continue; }
+      if (KNOWN.has(t) || DATA.RUNWAYS[t] || U.fix(t) || /^FL\d{2,3}$/.test(t) || /^\d+(\.\d+)?$/.test(t)) { out.push(t); i++; continue; }
+      i++;
+    }
+    return out;
+  }
+
   // encontra a aeronave pelo callsign completo ou sufixo único
   function findAircraft(token, game) {
-    const t = token.toUpperCase();
+    const t = fold(token);
     let ac = game.aircraft.find(a => a.cs === t && a.state !== 'done');
     if (ac) return ac;
     const matches = game.aircraft.filter(a => a.state !== 'done' && a.cs.endsWith(t) && t.length >= 2);
@@ -251,25 +615,26 @@ const Commands = (() => {
   }
 
   function parse(line, game) {
-    const raw = line.trim();
+    const raw = fold(line);
     if (!raw) return null;
-    const tokens = raw.toUpperCase().split(/\s+/);
+    const tokens = raw.split(/\s+/);
     let ac = findAircraft(tokens[0], game);
     let start = 1;
     if (!ac && game.selected && game.selected.state !== 'done') { ac = game.selected; start = 0; }
     if (!ac) return { err: `Callsign "${tokens[0]}" não encontrado.` };
 
-    const rest = tokens.slice(start);
+    const rest = canonicalizeTokens(tokens.slice(start));
     if (!rest.length) return { err: 'nenhuma instrução informada' };
 
     // separa a cláusula condicional (APOS/AFTER): o resto da linha é adiado
-    const ci = rest.findIndex(t => t === 'APOS' || t === 'APÓS' || t === 'AFTER');
+    const ci = rest.findIndex(t => t === 'APOS' || t === 'AFTER');
     let immediate = rest, cond = null;
     if (ci >= 0) {
       immediate = rest.slice(0, ci);
       const c = rest.slice(ci + 1);
       // [FIXO] [NM | pés | FLxxx] instrução... — número < 400 é NM, >= 400 é pés
-      let fix = null, dist = null, altC = null, j = 0;
+      let fix = null, dist = null, altC = null, altMode = 'crossing', j = 0;
+      if (CONDITION_MODE[c[j]]) { altMode = CONDITION_MODE[c[j]]; j++; }
       if (c[j] && U.fix(c[j])) { fix = c[j]; j++; }
       if (c[j]) {
         const fl = c[j].match(/^FL(\d{2,3})$/);
@@ -286,7 +651,7 @@ const Commands = (() => {
         return { err: 'APOS: informe um fixo, distância em NM ou altitude (ex.: APOS GOMES 5 · APOS 5000 · APOS FL80)' };
       if (!defTokens.length) return { err: 'APOS: informe a instrução a executar' };
       if (!KNOWN.has(defTokens[0])) return { err: `APOS: instrução "${defTokens[0]}" desconhecida` };
-      cond = { fix, dist, alt: altC, tokens: defTokens };
+      cond = { fix, dist, alt: altC, altMode, tokens: defTokens };
     }
 
     const { results, atcParts } = immediate.length ? run(ac, immediate, game) : { results: [], atcParts: [] };
@@ -299,7 +664,12 @@ const Commands = (() => {
         const parts = [];
         if (cond.fix) parts.push(cond.fix);
         if (cond.dist) parts.push(cond.dist + ' NM');
-        if (cond.alt != null) parts.push(U.fmtAlt(cond.alt));
+        if (cond.alt != null) {
+          if (cond.altMode === 'leaving') parts.push('deixando ' + U.fmtAlt(cond.alt));
+          else if (cond.altMode === 'level') parts.push('nivelado em ' + U.fmtAlt(cond.alt));
+          else if (cond.altMode === 'reaching') parts.push('atingindo ' + U.fmtAlt(cond.alt));
+          else parts.push(U.fmtAlt(cond.alt));
+        }
         atcParts.push('após ' + parts.join(' + ') + ': ' + cond.tokens.join(' '));
       }
     }

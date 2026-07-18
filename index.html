@@ -71,7 +71,7 @@
         placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R">
       <button id="btnSend" title="Transmitir (Enter)">📡</button>
     </div>
-    <div id="cmdHint">A alt · V vel · P proa/fixo · DIR fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · APOS fixo/NM cmd · ESPERA · HO · ARR · NATURE · SOULS · FUEL · INTENTIONS</div>
+    <div id="cmdHint">A alt · V vel · P proa/fixo · DIR fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · APOS fixo/NM cmd · pt/en natural: CLIMB, DESCEND, DIRECT, CLEARED TO LAND/TAKEOFF · NATURE · SOULS · FUEL · INTENTIONS</div>
   </div>
 
   <div id="sidebar">
@@ -216,23 +216,23 @@
     <p>Digite <b>CALLSIGN</b> (ou só o final, ex. <code>3412</code>) seguido de uma ou mais instruções.
        Com uma aeronave selecionada, pode omitir o callsign.</p>
     <table>
-      <tr><td><code>A 6000</code> / <code>A FL120</code></td><td>Suba/desça para altitude ou nível</td></tr>
-      <tr><td><code>V 220</code> / <code>V LIVRE</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
-      <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
-      <tr><td><code>P TOLDO</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele)</td></tr>
+      <tr><td><code>A 6000</code> / <code>A FL120</code><br><code>SUBA FL170</code> / <code>CLIMB TO FL170</code></td><td>Suba/desça para altitude ou nível. O parser também aceita fraseologia natural em português e inglês</td></tr>
+      <tr><td><code>V 220</code> / <code>V LIVRE</code><br><code>MANTENHA VELOCIDADE 220</code> / <code>SPEED 220</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
+      <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code><br><code>MANTENHA PROA 270</code> / <code>HEADING 270</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
+      <tr><td><code>P TOLDO</code><br><code>DIR GOMES</code> / <code>DIRECT GOMES</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele) ou direto ao fixo</td></tr>
       <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita fixo, distância ou altitude; o resto da linha é a instrução; aliases <code>APÓS</code>/<code>AFTER</code>)</td></tr>
-      <tr><td><code>APOS 5000 DIR GOMES</code> · <code>APOS FL80 V 280</code></td><td>Condicional por altitude: número ≥ 400 é pés, &lt; 400 é NM; dispara ao cruzar o nível subindo ou descendo</td></tr>
+      <tr><td><code>APOS 5000 DIR GOMES</code> · <code>APOS FL80 V 280</code><br><code>AO ATINGIR FL120 REDUZA 250</code><br><code>DEIXANDO 5000 DIRETO GOMES</code><br><code>NIVELADO FL080 V MIN</code></td><td>Condicional por altitude: número ≥ 400 é pés, &lt; 400 é NM; também aceita formas naturais como “ao atingir”, “deixando” e “nivelado”</td></tr>
       <tr><td><code>V MIN</code> / <code>V MAX</code></td><td>Mínima/máxima operacional — o valor exato fica a critério do comandante (flape, peso, fase do voo)</td></tr>
       <tr><td><code>ABORTAR</code> / <code>RTO</code></td><td>Aborta a decolagem em rolagem (antes de V1) ou abandona a pista se alinhado; a aeronave taxia de volta à cabeceira</td></tr>
       <tr><td><code>TAXI 27L</code></td><td>Taxia uma saída do ponto de espera para outra cabeceira (útil após trocar as pistas em uso); a SID é re-arquivada para o novo fluxo</td></tr>
       <tr><td><code>CRZ</code> / <code>CRUZAR</code></td><td>Autoriza um helicóptero VFR a cruzar a zona do aeródromo (círculo ATZ de 5 NM); sem autorização ele paira no limite aguardando. Vetores (<code>P</code>/<code>DIR</code>/<code>A</code>) também funcionam</td></tr>
       <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>). Se a condicional for lateral (<code>DIR</code>/<code>P</code>), a aeronave mantém a proa de pista até disparar, em vez de engatar a SID aos 900 ft</td></tr>
       <tr><td><code>DIR GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela)</td></tr>
-      <tr><td><code>VIA</code></td><td>Chegada: descer via STAR (cumpre as restrições da carta). Saída: <b>subir via SID</b> — segue a navegação da carta e sobe até o teto publicado; combine com a decolagem (<code>DEC 09R VIA</code>) ou com condicional (<code>DEC 09R APOS 5 VIA</code>)</td></tr>
-      <tr><td><code>ILS 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
-      <tr><td><code>AP</code> / <code>POUSO 09L</code></td><td>Autoriza o pouso (obrigatório antes de 1 NM final!)</td></tr>
-      <tr><td><code>ALINHAR 09R</code></td><td>Alinhar e manter</td></tr>
-      <tr><td><code>DEC 09R</code></td><td>Autoriza decolagem — a aeronave <b>mantém a proa de pista</b> aguardando instruções (use <code>VIA</code>, <code>P</code> ou <code>DIR</code> para navegar)</td></tr>
+      <tr><td><code>VIA</code><br><code>SUBA VIA SID</code> / <code>DESCEND VIA STAR</code></td><td>Chegada: descer via STAR (cumpre as restrições da carta). Saída: <b>subir via SID</b> — segue a navegação da carta e sobe até o teto publicado; combine com a decolagem (<code>DEC 09R VIA</code>) ou com condicional (<code>DEC 09R APOS 5 VIA</code>)</td></tr>
+      <tr><td><code>ILS 09L</code><br><code>AUTORIZADO ILS PISTA 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
+      <tr><td><code>AP</code> / <code>POUSO 09L</code><br><code>CLEARED TO LAND</code></td><td>Autoriza o pouso (obrigatório antes de 1 NM final!)</td></tr>
+      <tr><td><code>ALINHAR 09R</code><br><code>ALINHE E AGUARDE PISTA 09R</code></td><td>Alinhar e manter</td></tr>
+      <tr><td><code>DEC 09R</code><br><code>CLEARED FOR TAKEOFF RWY 09R</code></td><td>Autoriza decolagem — a aeronave <b>mantém a proa de pista</b> aguardando instruções (use <code>VIA</code>, <code>P</code> ou <code>DIR</code> para navegar)</td></tr>
       <tr><td><code>ESPERA NIDOL</code></td><td>Órbita de espera sobre o fixo</td></tr>
       <tr><td><code>ARR</code></td><td>Instrução de arremetida / cancela a aproximação</td></tr>
       <tr><td><code>SID CACTO1</code></td><td>Designa/troca a SID (no solo ou reingressa em voo)</td></tr>
@@ -264,7 +264,7 @@
     <h3>Fluxo de uma saída</h3>
     <p>Quando o piloto reportar pronto: <code>ALINHAR 09R</code> (opcional) → <code>DEC 09R</code> →
        depois de no ar, <code>A FL150</code> para subir até a transferência automática no limite da TMA.</p>
-    <p class="tiny">Teclas: <b>P</b> pausa · <b>Enter</b> transmite · <b>↑/↓</b> histórico · <b>Esc</b> limpa · roda do mouse = zoom · arrastar = mover radar.</p>
+    <p class="tiny">O parser aceita sintaxe curta do jogo, abreviações ATC e fraseologia natural em pt-BR/inglês. Teclas: <b>P</b> pausa · <b>Enter</b> transmite · <b>↑/↓</b> histórico · <b>Esc</b> limpa · roda do mouse = zoom · arrastar = mover radar.</p>
   </div>
 </div>
 

@@ -318,7 +318,7 @@ game.aircraft.push(rptFl);
 const rrFlRep = Commands.parse('GLO7012 REPORTE NIVELADO FL080', game);
 let trl = 0;
 while (trl < 900 && rptFl.reports.length) { rptFl.update(0.5, game); trl += 0.5; }
-const flMsg = events.find(e => e.includes('[GLO7012]') && e.includes('nivelado em FL080'));
+const flMsg = events.find(e => e.includes('[GLO7012]') && e.includes('nivelado em FL80'));
 console.log('REPFL   ->', rrFlRep.err || rrFlRep.atcText, '| evento:', flMsg || '(nenhum)');
 console.log(!rptFl.reports.length && flMsg ? 'OK REPORTE NÍVEL' : 'FALHA REPORTE NÍVEL');
 
@@ -337,7 +337,64 @@ const v3 = new Aircraft({ cs:'TAM7003', radio:'LATAM', type:'A320', kind:'arr', 
 console.log('VIAarr  ->', JSON.stringify(v3.cmdVia()));
 game.execPending = prevExec;
 
+// ---------- parser natural pt/en + abreviações ----------
+function mkNatArr(cs) {
+  const a = new Aircraft({
+    cs, radio: 'Azul', type: 'A20N', kind: 'arr',
+    x: -12, y: 10, alt: 12000, spd: 240, hdg: 90,
+    star: 'SABIA1', nav: { mode: 'hdg', hdg: 90, turn: null },
+  });
+  game.aircraft.push(a);
+  return a;
+}
+const natAlt = mkNatArr('AZU5530');
+const natAltRes = Commands.parse('AZU5530 CLIMB TO FL170', game);
+console.log('NATalt  ->', natAltRes.err || natAltRes.atcText, '| clrAlt:', natAlt.clrAlt);
+console.log(!natAltRes.err && natAlt.clrAlt === 17000 && /suba para FL170/.test(natAltRes.atcText) ? 'OK NAT ALT PT/EN' : 'FALHA NAT ALT');
+
+const natSpd = mkNatArr('AZU5531');
+const natSpdRes = Commands.parse('AZU5531 MAINTAIN SPEED 220 KNOTS', game);
+console.log('NATspd  ->', natSpdRes.err || natSpdRes.atcText, '| clrSpd:', natSpd.clrSpd);
+console.log(!natSpdRes.err && natSpd.clrSpd === 220 && /220 nós/.test(natSpdRes.atcText) ? 'OK NAT SPEED PT/EN' : 'FALHA NAT SPEED');
+
+const natHdg = mkNatArr('AZU5532');
+const natHdgRes = Commands.parse('AZU5532 HEADING 270', game);
+console.log('NAThdg  ->', natHdgRes.err || natHdgRes.atcText, '| nav:', natHdg.nav.hdg);
+console.log(!natHdgRes.err && natHdg.nav.mode === 'hdg' && natHdg.nav.hdg === 270 ? 'OK NAT HDG PT/EN' : 'FALHA NAT HDG');
+
+const natDir = mkNatArr('AZU5533');
+const natDirRes = Commands.parse('AZU5533 PROCEED DIRECT GOMES', game);
+console.log('NATdir  ->', natDirRes.err || natDirRes.atcText, '| nav:', natDir.nav.mode, natDir.nav.route && natDir.nav.route[0]);
+console.log(!natDirRes.err && natDir.nav.mode === 'route' && natDir.nav.route[0] === 'GOMES' ? 'OK NAT DIRECT PT/EN' : 'FALHA NAT DIRECT');
+
+const natLand = mkNatArr('AZU5534');
+natLand.app = { phase: 'loc', rwy: '09L' };
+const natLandRes = Commands.parse('AZU5534 CLEARED TO LAND RUNWAY 09L', game);
+console.log('NATland ->', natLandRes.err || natLandRes.atcText, '| landClr:', natLand.landClr);
+console.log(!natLandRes.err && natLand.landClr ? 'OK NAT LAND PT/EN' : 'FALHA NAT LAND');
+
+const natCond = mkDep('GLO7030', 'CACTO1');
+const natCondRes = Commands.parse('GLO7030 AO ATINGIR FL120 REDUZA PARA 250 NOS', game);
+console.log('NATcond ->', natCondRes.err || natCondRes.atcText, '| pending:', natCond.pending[0] && natCond.pending[0].altMode, natCond.pending[0] && natCond.pending[0].tokens.join(' '));
+console.log(!natCondRes.err && natCond.pending.length === 1 && natCond.pending[0].alt === 12000 && natCond.pending[0].altMode === 'reaching' && natCond.pending[0].tokens[0] === 'V'
+  ? 'OK NAT COND ATINGINDO'
+  : 'FALHA NAT COND ATINGINDO');
+
+const natLevel = mkNatArr('AZU5535');
+const natLevelRes = Commands.parse('AZU5535 NIVELADO FL080 MANTENHA VELOCIDADE MINIMA', game);
+console.log('NATlvl  ->', natLevelRes.err || natLevelRes.atcText, '| pending:', natLevel.pending[0] && natLevel.pending[0].altMode, natLevel.pending[0] && natLevel.pending[0].tokens.join(' '));
+console.log(!natLevelRes.err && natLevel.pending.length === 1 && natLevel.pending[0].alt === 8000 && natLevel.pending[0].altMode === 'level' && natLevel.pending[0].tokens.join(' ') === 'V MIN'
+  ? 'OK NAT COND NIVELADO'
+  : 'FALHA NAT COND NIVELADO');
+
+const natVia = mkDep('GLO7031', 'CACTO1');
+const natViaRes = Commands.parse('GLO7031 CLEARED VIA SID', game);
+console.log('NATvia  ->', natViaRes.err || natViaRes.atcText, '| depViaSid:', natVia.depViaSid, '| clrAlt:', natVia.clrAlt);
+console.log(!natViaRes.err && natVia.depViaSid && natVia.clrAlt === 15000 ? 'OK NAT VIA SID' : 'FALHA NAT VIA SID');
+
 // voa ate disparar a condicional (rota passa por NORTE)
+arr2.pending = arr2.pending.filter(p => /NORTE/.test(p.label));
+execd.length = 0;
 Commands.parse('AZU4521 DIR NORTE', game);
 let t3 = 0;
 while (t3 < 900 && execd.length === 0) { arr2.update(0.5, game); t3 += 0.5; }

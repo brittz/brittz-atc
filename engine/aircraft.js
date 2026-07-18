@@ -357,6 +357,7 @@ class Aircraft {
       fix: cond.fix || null,
       dist: cond.dist ?? null,
       alt: cond.alt ?? null,     // condição por altitude (pés)
+      altMode: cond.altMode || 'crossing',
       altDir: null,              // +1 cruzar subindo, -1 cruzar descendo
       tokens: cond.tokens,
       armed: !cond.fix,          // com fixo: arma ao cruzá-lo
@@ -378,7 +379,12 @@ class Aircraft {
     const whenParts = [];
     if (p.fix) whenParts.push(p.fix);
     if (p.dist) whenParts.push(p.dist + ' NM');
-    if (p.alt !== null) whenParts.push(U.fmtAlt(p.alt));
+    if (p.alt !== null) {
+      if (p.altMode === 'leaving') whenParts.push('deixando ' + U.fmtAlt(p.alt));
+      else if (p.altMode === 'level') whenParts.push('nivelado em ' + U.fmtAlt(p.alt));
+      else if (p.altMode === 'reaching') whenParts.push('atingindo ' + U.fmtAlt(p.alt));
+      else whenParts.push(U.fmtAlt(p.alt));
+    }
     p.label = 'após ' + whenParts.join(' + ') + ' → ' + p.tokens.join(' ');
     this.pending.push(p);
     return { rb: 'Após ' + whenParts.join(', ') + ', ' + p.tokens.join(' ') + extra };
@@ -467,8 +473,17 @@ class Aircraft {
       if (p.alt !== null) {
         // condição por altitude: dispara ao cruzar o nível (sentido definido
         // na primeira checagem — no solo, sempre subindo)
+        if (p.altMode === 'level') {
+          if (Math.abs(this.alt - p.alt) < 80 && Math.abs(this.vs) < 180) {
+            this.pending.splice(i, 1); game.execPending(this, p);
+          }
+          continue;
+        }
         if (p.altDir === null) p.altDir = this.alt < p.alt ? 1 : -1;
-        if ((p.altDir > 0 && this.alt >= p.alt) || (p.altDir < 0 && this.alt <= p.alt)) {
+        if (
+          (p.altMode === 'leaving' && ((p.altDir > 0 && this.alt >= p.alt + 60) || (p.altDir < 0 && this.alt <= p.alt - 60))) ||
+          (p.altMode !== 'leaving' && ((p.altDir > 0 && this.alt >= p.alt) || (p.altDir < 0 && this.alt <= p.alt)))
+        ) {
           this.pending.splice(i, 1); game.execPending(this, p);
         }
         continue;

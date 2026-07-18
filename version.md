@@ -3,6 +3,28 @@
 > Histórico consolidado retroativamente a partir de todos os commits do repositório.
 > As versões abaixo agrupam os commits por marco funcional, com a versão mais recente no topo.
 
+## [0.7.0] — 2026-07-17
+
+### Parser ATC natural
+- O parser passou a aceitar fraseologia natural em pt-BR e inglês, sem quebrar a sintaxe curta já existente
+- Comandos como `CLIMB TO FL170`, `HEADING 270`, `DIRECT GOMES`, `CLEARED TO LAND` e `CLEARED FOR TAKEOFF` agora são convertidos para a mesma representação canônica usada internamente pela engine
+- A camada de interpretação foi organizada por dicionários de palavras, sinônimos e abreviações, facilitando futuras expansões de idioma e fraseologia
+
+### Condicionais
+- Condicionais naturais como `AO ATINGIR FL120`, `DEIXANDO 5000 PÉS` e `NIVELADO FL080` passaram a ser aceitas
+- O motor agora diferencia melhor condicionais por cruzamento, deixando e nivelado, preservando a semântica esperada pelo comando do controlador
+
+### UX e ajuda
+- O menu de ajuda foi atualizado com exemplos de fraseologia natural, pt/en e novas formas condicionais
+
+### Emergências
+- A correção anterior de realismo das emergências foi incorporada ao histórico versionado
+
+### Commits desta versão
+- `0e3ead3` — `fix: restringir contexto de emergências e atualizar versao`
+
+---
+
 ## [0.6.1] — 2026-07-17
 
 ### Controle de versão
