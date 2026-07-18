@@ -57,7 +57,9 @@ class GameCore {
   runCommand(line)            // parse+aplica; retorna {ok, err?}; emite radio
   setConfig(k)                // troca de fluxo/cabeceiras (reseta runwayUse ao padrão)
   setRunwayUse(rwy, use)      // 'pouso'|'dec'|'ambas' por pista do fluxo;
-                              // valida ≥1 pista de pouso E ≥1 de decolagem
+                              // valida ≥1 pista de pouso E ≥1 de decolagem;
+                              // se o uso exclusivo esgotar um papel, complementar
+                              // automaticamente outra pista do fluxo (troca L↔R)
   cfgRunways() / arrRwys() / depRwys()  // pistas do fluxo e listas por papel
   serialize()                 // snapshot completo p/ rede (ver §5)
   // campos públicos (leitura): aircraft[], score, stats, time, cfg, runwayUse,

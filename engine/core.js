@@ -187,16 +187,30 @@ class GameCore {
   runwayUseLabel() {
     return 'Pouso: ' + this.arrRwys().join('/') + ' · Decolagem: ' + this.depRwys().join('/');
   }
-  // define o uso de UMA pista; garante ao menos uma de pouso e uma de decolagem
+  // define o uso de UMA pista; garante ao menos uma de pouso e uma de decolagem.
+  // Se a mudança exclusiva esgotaria um papel (ex.: inverter L↔R no padrão
+  // pouso/dec), a outra pista do fluxo é complementar automaticamente —
+  // sem exigir o passo intermediário por "ambas".
   setRunwayUse(rwy, use) {
     if (!this.cfgRunways().includes(rwy)) return { err: 'pista fora do fluxo ativo' };
     if (!['pouso', 'dec', 'ambas'].includes(use)) return { err: 'uso inválido' };
     const prev = this.runwayUse[rwy];
     if (prev === use) return { ok: true };
+    const snapshot = { ...this.runwayUse };
     this.runwayUse[rwy] = use;
     if (!this.arrRwys().length || !this.depRwys().length) {
-      this.runwayUse[rwy] = prev;
-      return { err: 'é preciso manter ao menos uma pista de pouso e uma de decolagem' };
+      const others = this.cfgRunways().filter(r => r !== rwy);
+      if (use === 'dec' && !this.arrRwys().length) {
+        const o = others.find(r => this.runwayUse[r] === 'dec') || others[0];
+        if (o) this.runwayUse[o] = 'pouso';
+      } else if (use === 'pouso' && !this.depRwys().length) {
+        const o = others.find(r => this.runwayUse[r] === 'pouso') || others[0];
+        if (o) this.runwayUse[o] = 'dec';
+      }
+      if (!this.arrRwys().length || !this.depRwys().length) {
+        this.runwayUse = snapshot;
+        return { err: 'é preciso manter ao menos uma pista de pouso e uma de decolagem' };
+      }
     }
     const lbl = this.runwayUseLabel();
     this.emit({ type: 'config', cfg: this.cfg,

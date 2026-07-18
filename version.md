@@ -6,6 +6,11 @@
 > **Release candidate:** enquanto o cabeçalho for `X.Y.Z-rc`, as mudanças acumulam neste
 > bloco. Só vira versão fechada (`X.Y.Z`) quando o usuário pedir para fechar/commitar.
 
+## [0.9.2] - 2026-07-18
+
+### Uso das pistas — troca direta
+- No ATIS, dá para inverter pouso/decolagem entre as pistas do fluxo sem precisar marcar «Ambas» antes: ao dedicar uma pista a um papel exclusivo, a outra se complementa automaticamente
+
 ## [0.9.1] — 2026-07-18
 
 ### Separação — decolagens paralelas

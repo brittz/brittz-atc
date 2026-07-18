@@ -881,16 +881,23 @@ console.log(hpNavOk && raced && pathOk && leftOk && natOk && altKeepsHold && dct
 // ---------- uso flexivel de pistas (pouso/dec/ambas por pista) ----------
 const ruCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
 const ru1 = ruCore.arrRwys().join(',') === '09L' && ruCore.depRwys().join(',') === '09R';
+// troca direta L↔R sem passar por "ambas" (complementa a outra pista)
+ruCore.setRunwayUse('09L', 'dec');
+const ruSwap = ruCore.arrRwys().join(',') === '09R' && ruCore.depRwys().join(',') === '09L';
+ruCore.setRunwayUse('09R', 'dec'); // inverte de novo: R=dec → L volta a pouso
+const ruSwap2 = ruCore.arrRwys().join(',') === '09L' && ruCore.depRwys().join(',') === '09R';
 ruCore.setRunwayUse('09R', 'ambas');
 const ru2 = ruCore.arrRwys().join(',') === '09L,09R' && ruCore.depRwys().join(',') === '09R';
 ruCore.setRunwayUse('09L', 'dec');
 const ru3 = ruCore.arrRwys().join(',') === '09R' && ruCore.depRwys().join(',') === '09L,09R';
-// invalida: deixar o aeroporto sem pista de pouso
-ruCore.setRunwayUse('09R', 'dec');
+// invalida: pista única não aceita uso exclusivo (sem outra para complementar)
+const _cfgRwys = ruCore.cfgRunways.bind(ruCore);
+ruCore.cfgRunways = () => ['09R'];
+ruCore.runwayUse = { '09R': 'ambas' };
 const ruErr = ruCore.setRunwayUse('09R', 'dec') || {};
-const ru4 = ruCore.arrRwys().length >= 1; // validacao reverteu
-ruCore.setRunwayUse('09L', 'ambas');
-ruCore.setRunwayUse('09R', 'ambas');
+const ru4 = !!ruErr.err && ruCore.runwayUse['09R'] === 'ambas';
+ruCore.cfgRunways = _cfgRwys;
+ruCore.runwayUse = { '09L': 'ambas', '09R': 'ambas' };
 const ru5 = ruCore.arrRwys().length === 2 && ruCore.depRwys().length === 2;
 // spawn de saidas alterna entre as pistas de decolagem
 const rwys = new Set();
@@ -901,9 +908,9 @@ ruCore.setConfig('27');
 const ru7 = ruCore.arrRwys().join(',') === '27R' && ruCore.depRwys().join(',') === '27L';
 // serializa o uso para o snapshot do multiplayer
 const ru8 = !!ruCore.serialize().runwayUse;
-console.log([ru1,ru2,ru3,ru4,ru5,ru6,ru7,ru8].every(Boolean)
-  ? 'OK USO DE PISTAS (padrao, ambas, so-dec, validacao, alternancia, inversao, snapshot)'
-  : 'FALHA USO DE PISTAS ' + JSON.stringify({ru1,ru2,ru3,ru4,ru5,ru6,ru7,ru8}));
+console.log([ru1,ruSwap,ruSwap2,ru2,ru3,ru4,ru5,ru6,ru7,ru8].every(Boolean)
+  ? 'OK USO DE PISTAS (padrao, troca direta, ambas, so-dec, validacao, alternancia, inversao, snapshot)'
+  : 'FALHA USO DE PISTAS ' + JSON.stringify({ru1,ruSwap,ruSwap2,ru2,ru3,ru4,ru5,ru6,ru7,ru8}));
 
 // ---------- reatribuição de aproximação / pista (v1) ----------
 const reArr = new Aircraft({
