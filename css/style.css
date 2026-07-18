@@ -312,6 +312,9 @@ button.primary:hover { background: #1a5a42; }
   color: var(--good); font-family: inherit; font-size: 13px;
 }
 #atisWarn { color: var(--warn); margin-top: 8px; }
+#rwyUse .rwyUseRow { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+#rwyUse .rwyUseRow b { min-width: 40px; color: var(--txt); }
+#rwyUse .tiny { margin-top: 4px; }
 #cfgSwitch { display: flex; flex-direction: column; gap: 6px; }
 #cfgSwitch button { text-align: left; padding: 8px 10px; }
 .modalBox.atis .tiny { margin-top: 10px; line-height: 1.4; }

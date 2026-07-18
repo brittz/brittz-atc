@@ -122,6 +122,33 @@ const game = {
     if (core) core.setConfig(k);
   },
 
+  // ---------- uso das pistas do fluxo (pouso / decolagem / ambas) ----------
+  cfgRunways() {
+    const c = DATA.CONFIGS[this.cfg];
+    if (!c) return [];
+    return c.runways || [...new Set([c.arrRwy, c.depRwy])];
+  },
+  get runwayUse() {
+    if (Net.active) return Net.runwayUse || {};
+    return core ? core.runwayUse : {};
+  },
+  arrRwys() {
+    if (core && !Net.active) return core.arrRwys();
+    const u = this.runwayUse;
+    return this.cfgRunways().filter(r => u[r] !== 'dec');
+  },
+  depRwys() {
+    if (core && !Net.active) return core.depRwys();
+    const u = this.runwayUse;
+    return this.cfgRunways().filter(r => u[r] !== 'pouso');
+  },
+  setRunwayUse(rwy, use) {
+    if (Net.active) { UI.logSys('Uso de pistas ajustável apenas no single-player (por enquanto)'); return; }
+    if (!core) return;
+    const r = core.setRunwayUse(rwy, use);
+    if (r && r.err) UI.logSys(r.err, 'bad');
+  },
+
   rank() {
     const s = this.score;
     if (s < 300) return 'Estagiário';

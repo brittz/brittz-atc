@@ -353,8 +353,9 @@ const UI = (() => {
       btn('Alinhar ' + a.rwy, 'ALINHAR ' + a.rwy);
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
       btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
-      if (DATA.RWY_PAIR[a.rwy] !== DATA.RWY_PAIR[cfg.depRwy])
-        btn('Táxi p/ ' + cfg.depRwy, 'TAXI ' + cfg.depRwy, 'alt');
+      const deps = game.depRwys();
+      if (deps.length && !deps.some(r => DATA.RWY_PAIR[a.rwy] === DATA.RWY_PAIR[r]))
+        btn('Táxi p/ ' + deps[0], 'TAXI ' + deps[0], 'alt');
     } else if (a.state === 'lineup') {
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
       btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
@@ -369,8 +370,10 @@ const UI = (() => {
       }
       if (a.kind === 'arr') {
         if (a.app.phase === 'none') {
-          btn('ILS ' + cfg.arrRwy, 'ILS ' + cfg.arrRwy, 'good');
-          btn('ILS ' + cfg.depRwy, 'ILS ' + cfg.depRwy);
+          // pistas de pouso do uso atual em destaque; as demais como alternativa
+          const arrs = game.arrRwys();
+          for (const r of arrs) btn('ILS ' + r, 'ILS ' + r, 'good');
+          for (const r of game.cfgRunways()) if (!arrs.includes(r)) btn('ILS ' + r, 'ILS ' + r);
         } else if (!a.landClr) {
           btn('Autorizar pouso', 'AP', 'good');
           btn('Arremeter', 'ARR', 'bad');
@@ -659,6 +662,32 @@ const UI = (() => {
       n.textContent = 'Troca de pistas em uso disponível apenas no single-player.';
       box.appendChild(n);
     }
+
+    // uso de cada pista do fluxo: pouso / decolagem / ambas
+    const useBox = $('rwyUse');
+    useBox.innerHTML = '';
+    const uses = [['pouso', 'Pouso'], ['dec', 'Decolagem'], ['ambas', 'Ambas']];
+    for (const rwy of game.cfgRunways()) {
+      const row = document.createElement('div');
+      row.className = 'rwyUseRow';
+      const name = document.createElement('b');
+      name.textContent = rwy;
+      row.appendChild(name);
+      for (const [val, label] of uses) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.classList.toggle('on', (game.runwayUse[rwy] || 'ambas') === val);
+        b.disabled = mp;
+        b.onclick = () => { game.setRunwayUse(rwy, val); refreshAtisModal(); };
+        row.appendChild(b);
+      }
+      useBox.appendChild(row);
+    }
+    const resumo = document.createElement('p');
+    resumo.className = 'tiny';
+    resumo.textContent = '✈ Pouso: ' + game.arrRwys().join(' / ') +
+      '  ·  🛫 Decolagem: ' + game.depRwys().join(' / ');
+    useBox.appendChild(resumo);
   }
 
   // preenche a barra de comando com uma instrução pendente de confirmação

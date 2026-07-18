@@ -32,6 +32,8 @@ class GameCore {
     this.time = 0;              // segundos de simulação
     this.cfg = opts.cfg || DATA.AIRPORT.defaultCfg || Object.keys(DATA.CONFIGS)[0];
     this.traffic = opts.traffic || 'normal'; // calmo | normal | pico
+    // uso de cada pista do fluxo ativo: 'pouso' | 'dec' | 'ambas'
+    this.runwayUse = this._defaultRunwayUse();
     this.stats = { landed: 0, departed: 0, goarounds: 0, sepLoss: 0 };
     this.usedCs = new Set();
     this.nextArr = 10; this.nextDep = 20; this.nextHeli = 150;
@@ -159,15 +161,57 @@ class GameCore {
     return -this.weather.spd * Math.cos(U.d2r(this.weather.dir - r.hdg));
   }
 
-  // troca de pistas em uso durante o jogo
+  // ---------- uso das pistas do fluxo ativo ----------
+  // Além de inverter as cabeceiras (setConfig 09↔27), cada pista do fluxo pode
+  // ser dedicada a POUSO, a DECOLAGEM ou operar AMBAS (operação mista).
+  cfgRunways(cfgKey) {
+    const c = DATA.CONFIGS[cfgKey || this.cfg];
+    if (!c) return [];
+    return c.runways || [...new Set([c.arrRwy, c.depRwy])];
+  }
+  _defaultRunwayUse() {
+    const c = DATA.CONFIGS[this.cfg];
+    const use = {};
+    for (const r of this.cfgRunways()) use[r] = 'ambas';
+    if (c && c.arrRwy !== c.depRwy) { use[c.arrRwy] = 'pouso'; use[c.depRwy] = 'dec'; }
+    return use;
+  }
+  arrRwys() { return this.cfgRunways().filter(r => this.runwayUse[r] !== 'dec'); }
+  depRwys() { return this.cfgRunways().filter(r => this.runwayUse[r] !== 'pouso'); }
+  runwayUseLabel() {
+    return 'Pouso: ' + this.arrRwys().join('/') + ' · Decolagem: ' + this.depRwys().join('/');
+  }
+  // define o uso de UMA pista; garante ao menos uma de pouso e uma de decolagem
+  setRunwayUse(rwy, use) {
+    if (!this.cfgRunways().includes(rwy)) return { err: 'pista fora do fluxo ativo' };
+    if (!['pouso', 'dec', 'ambas'].includes(use)) return { err: 'uso inválido' };
+    const prev = this.runwayUse[rwy];
+    if (prev === use) return { ok: true };
+    this.runwayUse[rwy] = use;
+    if (!this.arrRwys().length || !this.depRwys().length) {
+      this.runwayUse[rwy] = prev;
+      return { err: 'é preciso manter ao menos uma pista de pouso e uma de decolagem' };
+    }
+    const lbl = this.runwayUseLabel();
+    this.emit({ type: 'config', cfg: this.cfg,
+      label: DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + lbl });
+    this.publishAtis('novo uso de pistas em vigor');
+    this.emit({ type: 'radio', who: 'sys', text: 'USO DE PISTAS — ' + lbl });
+    this.emit({ type: 'banner', text: lbl });
+    return { ok: true };
+  }
+
+  // troca de pistas em uso durante o jogo (inversão de cabeceiras / fluxo)
   setConfig(k) {
     if (k === this.cfg || !DATA.CONFIGS[k]) return;
     this.cfg = k;
     const c = DATA.CONFIGS[k];
+    this.runwayUse = this._defaultRunwayUse(); // novo fluxo volta ao padrão da carta
+    const dep0 = this.depRwys()[0];
     // saídas ainda taxiando são re-alocadas para a nova configuração
     for (const a of this.aircraft) {
       if (a.kind === 'dep' && a.state === 'taxi') {
-        a.rwy = c.depRwy;
+        a.rwy = dep0;
         const oldExit = DATA.SIDS[a.sid] && DATA.SIDS[a.sid].exit;
         const nova = Object.entries(DATA.SIDS).find(([, s]) => s.cfg === k && s.exit === oldExit);
         if (nova) a.sid = nova[0];
@@ -177,12 +221,13 @@ class GameCore {
       label: DATA.AIRPORT.icao + ' ' + DATA.AIRPORT.name + ' · ' + c.label });
     this.publishAtis('nova configuração em vigor');
     this.emit({ type: 'radio', who: 'sys', text: 'PISTAS EM USO: ' + c.label });
-    this.emit({ type: 'banner', text: 'Pistas em uso: pousos ' + c.arrRwy + ' · decolagens ' + c.depRwy });
+    this.emit({ type: 'banner', text: 'Pistas em uso — ' + this.runwayUseLabel() });
     // aeronaves já no ponto de espera antigo: lembre o jogador do comando TAXI
     if (this.aircraft.some(a => a.kind === 'dep' &&
-        ['holdshort', 'lineup'].includes(a.state) && DATA.RWY_PAIR[a.rwy] !== DATA.RWY_PAIR[c.depRwy]))
+        ['holdshort', 'lineup'].includes(a.state) &&
+        !this.depRwys().some(r => DATA.RWY_PAIR[a.rwy] === DATA.RWY_PAIR[r])))
       this.emit({ type: 'radio', who: 'sys',
-        text: 'Há saídas na cabeceira antiga — use "TAXI ' + c.depRwy + '" para reposicioná-las.' });
+        text: 'Há saídas na cabeceira antiga — use "TAXI ' + dep0 + '" para reposicioná-las.' });
   }
 
   // conclusão de transferência ao Centro (manual = via comando HO)
@@ -401,7 +446,10 @@ class GameCore {
       sid: sidId, dest: U.pick(DATA.DESTS[sid.exit]),
       spawnT: this.time,
     });
-    ac.rwy = DATA.CONFIGS[this.cfg].depRwy;
+    // qualquer pista de decolagem do uso atual (alterna quando há mais de uma)
+    const deps = this.depRwys();
+    this._depRR = ((this._depRR || 0) + 1) % Math.max(1, deps.length);
+    ac.rwy = deps[this._depRR] || DATA.CONFIGS[this.cfg].depRwy;
     ac.clrAlt = 5000;
     this.aircraft.push(ac);
   }
@@ -673,6 +721,7 @@ class GameCore {
       weather: { dir: W.dir, spd: W.spd, qnh: W.qnh, temp: W.temp },
       atis: this.atisLetter(),
       cfg: this.cfg,
+      runwayUse: { ...this.runwayUse },
       airportState: { ...this.airportState },
       aircraft: this.aircraft.map(a => ({
         cs: a.cs, radio: a.radio, type: a.type, kind: a.kind,

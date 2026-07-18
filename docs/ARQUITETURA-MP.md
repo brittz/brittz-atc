@@ -48,10 +48,13 @@ class GameCore {
 
   tick(dt)                    // avança simulação (substeps internos como hoje)
   runCommand(line)            // parse+aplica; retorna {ok, err?}; emite radio
-  setConfig(k)                // troca pistas em uso
+  setConfig(k)                // troca de fluxo/cabeceiras (reseta runwayUse ao padrão)
+  setRunwayUse(rwy, use)      // 'pouso'|'dec'|'ambas' por pista do fluxo;
+                              // valida ≥1 pista de pouso E ≥1 de decolagem
+  cfgRunways() / arrRwys() / depRwys()  // pistas do fluxo e listas por papel
   serialize()                 // snapshot completo p/ rede (ver §5)
-  // campos públicos (leitura): aircraft[], score, stats, time, cfg, weather,
-  //   conflictPairs, airportState, started, traffic
+  // campos públicos (leitura): aircraft[], score, stats, time, cfg, runwayUse,
+  //   weather, conflictPairs, airportState, started, traffic
   // métodos públicos que o motor de aeronaves usa (mantidos): radioPilot,
   //   execPending, touchdown, onGoAround, runwayOccupied, windStr, clock,
   //   completeHandoff, onHeliCrossed, addScore, metar, atisLetter, tailwind,
@@ -84,7 +87,7 @@ Servidor → Cliente:
 {t:'hello-ok', nick}
 {t:'session', code, host, state:'lobby'|'ativa', players:[{nick,pos}], cfg, traffic}
 {t:'start', airport:<JSON completo do aeroporto>, cfg, time}
-{t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, airportState, aircraft:[...]}
+{t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, runwayUse, airportState, aircraft:[...]}
 {t:'radio', who, cs?, text, cls?}
 {t:'chat', from, to?, text}
 {t:'event', kind:'banner'|'chime'|'alarm', ...payload}
