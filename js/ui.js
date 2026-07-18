@@ -215,9 +215,14 @@ const UI = (() => {
     if (a.state === 'abort') return a.vacateClr ? 'RTO LIVRANDO' : 'RTO — LIVRAR';
     if (a.state === 'rollout') return a.vacateClr ? 'LIVRANDO' : 'POUSOU — LIVRAR';
     if (a.goingAround) return 'ARREMET.';
-    if (a.app.phase === 'gs') return (a.landClr ? 'POUSO ' : 'FINAL ') + a.app.rwy;
-    if (a.app.phase === 'loc') return 'LOC ' + a.app.rwy;
-    if (a.app.phase === 'cleared') return 'ILS ' + a.app.rwy;
+    if (a.app.phase === 'gs') {
+      const tag = a.app.type === 'visual' ? 'VIS ' : '';
+      return (a.landClr ? 'POUSO ' : 'FINAL ') + tag + a.app.rwy;
+    }
+    if (a.app.phase === 'loc')
+      return (a.app.type === 'visual' ? 'VIS ' : 'LOC ') + a.app.rwy;
+    if (a.app.phase === 'cleared')
+      return (a.app.type === 'visual' ? '→VIS ' : 'ILS ') + a.app.rwy;
     if (a.nav.mode === 'hold') return 'ESPERA';
     if (a.via) return 'DESC VIA';
     if (a.nav.mode === 'hdg' && a.airborne) return 'VETOR';
@@ -238,8 +243,11 @@ const UI = (() => {
   let quickSig = '';   // assinatura do conjunto atual de botões rápidos
 
   function wheelDisplay() {
-    for (const [k, w] of Object.entries(WHEELS))
-      document.querySelector('#' + w.el + ' .wv').textContent = w.fmt(wheelVals[k]);
+    for (const [k, w] of Object.entries(WHEELS)) {
+      const el = document.querySelector('#' + w.el + ' .wv');
+      el.textContent = w.fmt(wheelVals[k]);
+      el.classList.toggle('staged', !!wheelStaged[k]);
+    }
   }
   // valores de referência: a autorização vigente da aeronave
   // ALT = autorizada · PROA = designada (vetor) ou atual · VEL = designada ou indicada
@@ -267,6 +275,7 @@ const UI = (() => {
   }
   function wheelUnstage() {
     wheelStaged.alt = wheelStaged.hdg = wheelStaged.spd = false;
+    wheelDisplay();
   }
   function bumpWheel(k, dir) {
     wheelStaged[k] = true;
@@ -277,12 +286,23 @@ const UI = (() => {
     wheelVals[k] = v;
     wheelDisplay();
   }
-  function proposeWheel(k) {
+  // Monta um único comando com todas as roletas ajustadas (ex.: CS A 6000 P 270 V 220)
+  function proposeWheels() {
     const a = game.selected;
     if (!a || a.state === 'done') return;
-    const w = WHEELS[k];
-    propose(a.cs + ' ' + w.cmd + ' ' + (k === 'hdg' ? U.fmtHdg(wheelVals[k]) : wheelVals[k]));
+    const parts = [a.cs];
+    for (const k of ['alt', 'hdg', 'spd']) {
+      if (!wheelStaged[k]) continue;
+      const w = WHEELS[k];
+      parts.push(w.cmd, k === 'hdg' ? U.fmtHdg(wheelVals[k]) : String(wheelVals[k]));
+    }
+    if (parts.length === 1) return;
+    propose(parts.join(' '));
     $('btnQuickSend').classList.add('pending');
+    wheelDisplay();
+  }
+  function proposeWheel(/* k */) {
+    proposeWheels();
   }
   function attachWheel(k) {
     const w = WHEELS[k];
@@ -379,19 +399,45 @@ const UI = (() => {
     } else if (a.airborne) {
       if (a.kind === 'arr') {
         if (a.star && !a.via && a.nav.mode === 'route') btn('Descer VIA STAR', 'VIA', 'good');
+        if (a.star) btn('Cancelar STAR', 'CANCELSTAR', 'alt');
+        if (typeof Approach !== 'undefined' && Approach.canResume && Approach.canResume(a))
+          btn('Retomar navegação', 'RESUME', 'good');
+        btn('Vetores radar', 'VETORES', 'alt');
       } else if (a.sid && DATA.SIDS[a.sid] && a.clrAlt < (DATA.SIDS[a.sid].top || 15000)) {
         btn('Subir VIA SID', 'VIA', 'good');
+        if (typeof Approach !== 'undefined' && Approach.canResume && Approach.canResume(a))
+          btn('Retomar navegação', 'RESUME', 'good');
+      } else if (a.kind === 'dep' && typeof Approach !== 'undefined' && Approach.canResume && Approach.canResume(a)) {
+        btn('Retomar navegação', 'RESUME', 'good');
       }
       if (a.kind === 'arr') {
+        const arrs = game.arrRwys();
+        const otherRwys = game.cfgRunways().filter(r => !arrs.includes(r));
         if (a.app.phase === 'none') {
-          // pistas de pouso do uso atual em destaque; as demais como alternativa
-          const arrs = game.arrRwys();
+          if (!a.airportInSight) btn('Reporte aeroporto', 'REPORTEAERO');
           for (const r of arrs) btn('ILS ' + r, 'ILS ' + r, 'good');
-          for (const r of game.cfgRunways()) if (!arrs.includes(r)) btn('ILS ' + r, 'ILS ' + r);
-        } else if (!a.landClr) {
-          btn('Autorizar pouso', 'AP', 'good');
+          for (const r of otherRwys) btn('ILS ' + r, 'ILS ' + r);
+          for (const r of arrs) btn('Visual ' + r, 'VISUAL ' + r);
+          for (const r of otherRwys) btn('Visual ' + r, 'VISUAL ' + r);
+        } else {
+          if (!a.landClr) btn('Autorizar pouso', 'AP', 'good');
           btn('Arremeter', 'ARR', 'bad');
-        } else btn('Arremeter', 'ARR', 'bad');
+          if (a.app.type === 'visual') {
+            btn('Cancelar visual', 'CANCELVISUAL', 'alt');
+            for (const r of arrs) {
+              if (r !== a.app.rwy) btn('ILS ' + r, 'ILS ' + r);
+              if (r !== a.app.rwy) btn('Alterar pista ' + r, 'ALTPISTA ' + r, 'alt');
+            }
+            for (const r of otherRwys) {
+              if (r !== a.app.rwy) btn('Alterar pista ' + r, 'ALTPISTA ' + r, 'alt');
+            }
+          } else {
+            btn('Aprox. visual ' + (a.app.rwy || arrs[0] || ''), 'VISUAL ' + (a.app.rwy || arrs[0] || ''));
+            for (const r of arrs.concat(otherRwys)) {
+              if (r !== a.app.rwy) btn('Alterar pista ' + r, 'ALTPISTA ' + r, 'alt');
+            }
+          }
+        }
       } else if (a.kind === 'hel') {
         if (a.hovering) btn('Prosseguir', 'PROSSEGUIR', 'good');
         else btn('Hover', 'HOVER');
@@ -401,6 +447,10 @@ const UI = (() => {
       }
       if (a.emergency) {
         Emergency.availableQuickActions(a.emergency).forEach(it => btn(it.label, it.cmd, it.cls));
+        if (typeof EmergencyResponse !== 'undefined') {
+          EmergencyResponse.quickActions(game.emergencyResponse, a).forEach(it =>
+            btn(it.label, it.cmd, it.cls));
+        }
       }
       // Standby / previsão — só com solicitação pendente do piloto
       const ask = a.pilotAi && a.pilotAi.pendingAsk;
@@ -557,8 +607,68 @@ const UI = (() => {
     $('statGA').textContent = game.stats.goarounds;
     $('statSep').textContent = game.stats.sepLoss;
     $('appVersion').textContent = game.versionInfo && game.versionInfo.label ? game.versionInfo.label : 'v—';
-    $('appVersion').title = game.versionInfo && game.versionInfo.fullLabel ? game.versionInfo.fullLabel : 'Versão —';
+    const verTitle = (game.versionInfo && game.versionInfo.fullLabel ? game.versionInfo.fullLabel : 'Versão —')
+      + ' — clique para ver o changelog';
+    $('appVersion').title = verTitle;
+    const vb = $('versionBtn');
+    if (vb) vb.title = verTitle;
     $('versionLine').textContent = game.versionInfo && game.versionInfo.fullLabel ? game.versionInfo.fullLabel : 'Versão —';
+  }
+
+  // Markdown mínimo do version.md → HTML seguro o suficiente para conteúdo nosso
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function inlineMd(s) {
+    return escapeHtml(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/\*([^*]+)\*/g, '<i>$1</i>');
+  }
+  function markdownToHtml(md) {
+    const lines = String(md || '').replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    let inUl = false;
+    const closeUl = () => { if (inUl) { out.push('</ul>'); inUl = false; } };
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, '');
+      if (/^---+\s*$/.test(line)) { closeUl(); out.push('<hr>'); continue; }
+      if (!line.trim()) { closeUl(); continue; }
+      const h = line.match(/^(#{1,3})\s+(.*)$/);
+      if (h) {
+        closeUl();
+        const n = h[1].length;
+        out.push('<h' + n + '>' + inlineMd(h[2]) + '</h' + n + '>');
+        continue;
+      }
+      if (/^>\s?/.test(line)) {
+        closeUl();
+        out.push('<blockquote>' + inlineMd(line.replace(/^>\s?/, '')) + '</blockquote>');
+        continue;
+      }
+      if (/^[-*]\s+/.test(line)) {
+        if (!inUl) { out.push('<ul>'); inUl = true; }
+        out.push('<li>' + inlineMd(line.replace(/^[-*]\s+/, '')) + '</li>');
+        continue;
+      }
+      closeUl();
+      out.push('<p>' + inlineMd(line) + '</p>');
+    }
+    closeUl();
+    return out.join('\n');
+  }
+
+  function openChangelog() {
+    const body = $('changelogBody');
+    const md = game.versionInfo && game.versionInfo.markdown;
+    if (!md) {
+      body.innerHTML = '<p>Changelog indisponível.</p>';
+    } else {
+      body.innerHTML = markdownToHtml(md);
+      body.scrollTop = 0;
+    }
+    $('changelogModal').classList.remove('hidden');
   }
 
   function flashBanner(text, cls) {
@@ -608,6 +718,17 @@ const UI = (() => {
 
     $('btnCharts').onclick = openCharts;
     $('btnHelp').onclick = () => $('helpModal').classList.remove('hidden');
+    const openVer = () => openChangelog();
+    const vb = $('versionBtn');
+    if (vb) {
+      vb.onclick = openVer;
+      vb.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openVer(); } };
+    }
+    const vl = $('versionLine');
+    if (vl) {
+      vl.onclick = openVer;
+      vl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openVer(); } };
+    }
     document.querySelectorAll('.modal .close').forEach(b => b.onclick = () => b.closest('.modal').classList.add('hidden'));
     document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.add('hidden'); }));
 
@@ -722,6 +843,31 @@ const UI = (() => {
     resumo.textContent = '✈ Pouso: ' + game.arrRwys().join(' / ') +
       '  ·  🛫 Decolagem: ' + game.depRwys().join(' / ');
     useBox.appendChild(resumo);
+
+    // Restrições contextuais de emergência (Emergency Traffic Manager)
+    if (game.airportState && game.airportState.state !== 'normal' && game.emergencyTrafficSummary) {
+      const sum = game.emergencyTrafficSummary();
+      const lines = [];
+      for (const [rwy, info] of Object.entries(sum)) {
+        if (info.state === 'available' || info.state === 'occupied') continue;
+        const tag = info.state === 'blocked' ? 'bloqueada'
+          : info.state === 'inspecting' ? 'em inspeção'
+          : 'restrita (emergência)';
+        lines.push(rwy + ': ' + tag + (info.reason ? ' — ' + info.reason : ''));
+      }
+      if (lines.length) {
+        const emgP = document.createElement('p');
+        emgP.className = 'tiny';
+        emgP.style.color = 'var(--alert, #c44)';
+        emgP.textContent = 'Emergência · ' + lines.join(' · ');
+        useBox.appendChild(emgP);
+      } else if (game.airportState.state === 'emergency') {
+        const okP = document.createElement('p');
+        okP.className = 'tiny';
+        okP.textContent = 'Emergência ativa — pistas paralelas independentes podem operar normalmente.';
+        useBox.appendChild(okP);
+      }
+    }
   }
 
   // preenche a barra de comando com uma instrução pendente de confirmação
@@ -737,5 +883,5 @@ const UI = (() => {
     if (isTouch && document.activeElement === $('cmdInput')) $('cmdInput').blur();
   }
 
-  return { init, logATC, logPilot, logSys, logChat, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, propose, refreshAtisModal, dismissKeyboard, isTouch };
+  return { init, logATC, logPilot, logSys, logChat, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, openChangelog, propose, refreshAtisModal, dismissKeyboard, isTouch };
 })();

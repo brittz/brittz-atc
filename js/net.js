@@ -37,6 +37,9 @@ const Net = {
   cfg: null,
   runwayUse: null,       // uso das pistas do fluxo (pouso/dec/ambas), do snapshot
   airportState: { state: 'normal', label: 'Normal', active: [] },
+  runwayStates: {},
+  emergencyUnits: [],
+  emergencyResponse: null,
 
   // hooks preenchidos pelo cliente (js/main.js)
   onSession: null,       // (msg) => atualiza o lobby
@@ -106,6 +109,9 @@ const Net = {
     this.aircraft = [];
     this.runwayUse = null;
     this.airportState = { state: 'normal', label: 'Normal', active: [] };
+    this.runwayStates = {};
+    this.emergencyUnits = [];
+    this.emergencyResponse = null;
     this._afterHello = null;
     if (typeof document !== 'undefined') {
       const lm = document.getElementById('lobbyModal');
@@ -212,6 +218,11 @@ const Net = {
         if (msg.cfg) this.cfg = msg.cfg;
         if (msg.runwayUse) this.runwayUse = msg.runwayUse;
         if (msg.airportState) this.airportState = msg.airportState;
+        if (msg.runwayStates) this.runwayStates = msg.runwayStates;
+        if (msg.emergencyUnits) this.emergencyUnits = msg.emergencyUnits;
+        else if (msg.emergencyResponse && msg.emergencyResponse.units)
+          this.emergencyUnits = msg.emergencyResponse.units;
+        if (msg.emergencyResponse) this.emergencyResponse = msg.emergencyResponse;
         this.hydrate(msg.aircraft || []);
         break;
 
@@ -252,6 +263,9 @@ const Net = {
     this.aircraft = [];
     this.runwayUse = null;
     this.airportState = { state: 'normal', label: 'Normal', active: [] };
+    this.runwayStates = {};
+    this.emergencyUnits = [];
+    this.emergencyResponse = null;
     this._afterHello = null;
     if (typeof document !== 'undefined') {
       const lm = document.getElementById('lobbyModal');

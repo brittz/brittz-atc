@@ -6,6 +6,49 @@
 > **Release candidate:** enquanto o cabeçalho for `X.Y.Z-rc`, as mudanças acumulam neste
 > bloco. Só vira versão fechada (`X.Y.Z`) quando o usuário pedir para fechar/commitar.
 
+## [0.9.0] — 2026-07-18
+
+### Quick panel — composição de roletas
+- Ajustar ALT, PROA e/ou VEL acumula no mesmo comando (ex.: `TAM3412 A 6000 P 270 V 220`) em vez de sobrescrever só a última roleta
+- Roletas tocadas ficam visualmente marcadas até a transmissão
+
+### Changelog na UI
+- Clique na versão do header (ou na linha de versão do menu) abre o modal com o conteúdo de `version.md`
+
+### Emergência — rádio
+- Removido o reporte inútil “emergência em andamento, sem mudanças significativas”; o piloto só atualiza quando a situação piora ou melhora
+
+### Retomar navegação própria
+- `RESUME` / `RETOME A NAVEGAÇÃO` / `RESUME OWN NAVIGATION` etc. reingressa na STAR/SID preservada após vetores/proa/DCT
+- Plano guardado em `flightPlan`; botão contextual **Retomar navegação**; Navigation Planner em `approach.js`
+- SPEC: `docs/SPECS/gameplay/resume-own-navigation.md`
+
+### Gerenciamento de tráfego em emergência
+- Emergência deixa de bloquear decolagens de forma indiscriminada; `engine/emergency_traffic.js` avalia faixa, fase, distância e Separation
+- Pistas paralelas independentes (SBCV N/S) continuam; mesma faixa é retida em final/pós-pouso; longe do campo ainda pode liberar
+- Motivo explícito na recusa de `DEC`; ATIS mostra restrições temporárias
+- SPEC: `docs/SPECS/gameplay/emergency-traffic-management.md`
+
+### Resposta de emergência do aeroporto
+- Nova fatia vertical complementar ao Emergency System V2: despacho de equipes (ARFF,
+  ambulância, médica, operação completa), veículos simulados no radar, bloqueio/inspeção
+  de pista independente e encerramento só quando a ocorrência está segura
+- Módulos `engine/runway_state.js`, `engine/emergency_units.js`, `engine/emergency_response.js`
+- Comandos pt/en (`ACIONE BOMBEIROS`, `DISPATCH FIRE`, `ENCERRAR EMERGÊNCIA`, etc.), atalhos
+  no painel, ajuda/`cmdHint`, domínio TWR no MP e campos de snapshot (`runwayStates`,
+  `emergencyUnits`, `emergencyResponse`)
+- SPEC: `docs/SPECS/gameplay/airport-emergency-response.md`
+
+### Reatribuição de aproximação e pista
+- Cancelar STAR (`CANCELSTAR` / pt-en) deixa a carta e aguarda vetores sem cancelar ILS/visual já autorizado
+- Vetores radar (`VETORES` / `RADAR VECTORS`) cancelam STAR + aproximação e mantêm a proa atual
+- Aproximação visual (`VISUAL`) com cancelamento e retorno ao ILS; `app.type` no snapshot
+- `ALTPISTA` / alterar pista reautoriza o mesmo tipo de APP; RNAV/VOR aceitos no parser com resposta clara se sem carta
+- Atalhos contextuais na chegada; ajuda e contrato MP atualizados
+- Módulo `engine/approach.js` (Procedure / Nav / Approach managers)
+- `REPORTE AEROPORTO` / airport-in-sight (auto ≤ ~22 NM; exigido para VISUAL se longe)
+- SPEC: `docs/SPECS/gameplay/approach-and-runway-reassignment.md`
+
 ## [0.8.0] — 2026-07-18
 
 ### Padronização DCT

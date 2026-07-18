@@ -15,7 +15,7 @@
   <button id="atisBtn" title="METAR / ATIS / pistas em uso">🌬 <span id="windEl">—</span> · ATIS <span id="atisLetter">A</span></button>
   <div class="stat score">★ <span id="score">0</span> <small id="rankEl">Estagiário</small></div>
   <div class="stat small">Pousos <b id="statLanded">0</b> · Saídas <b id="statDeparted">0</b> · Arrem. <b id="statGA">0</b> · Perdas sep. <b id="statSep">0</b></div>
-  <div class="stat version">🏷 <span id="appVersion">v—</span></div>
+  <div class="stat version" id="versionBtn" title="Ver changelog" role="button" tabindex="0">🏷 <span id="appVersion">v—</span></div>
   <div class="spacer"></div>
   <div id="speedBtns">
     <button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button>
@@ -71,7 +71,7 @@
         placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R">
       <button id="btnSend" title="Transmitir (Enter)">📡</button>
     </div>
-    <div id="cmdHint">A alt · V vel · P proa/fixo · DCT fixo · ESPERA/HOLD fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · LIVRAR · AGUARDE · PREVISAO · HOVER · CRZ · APOS fixo/NM cmd · pt/en natural: CLIMB, DESCEND, DIRECT, CLEARED TO LAND/TAKEOFF · NATURE · SOULS · FUEL · INTENTIONS</div>
+    <div id="cmdHint">A alt · V vel · P proa/fixo · DCT fixo · ESPERA/HOLD fixo · VIA · STAR/SID · ILS · VISUAL · REPORTE AEROPORTO · CANCELSTAR · VETORES · RESUME · ALTPISTA · AP · ALINHAR · DEC · LIVRAR · AGUARDE · PREVISAO · HOVER · CRZ · APOS fixo/NM cmd · pt/en natural: CLIMB, DESCEND, DIRECT, CLEARED TO LAND/TAKEOFF, CANCEL STAR, RADAR VECTORS, RESUME OWN NAVIGATION, VISUAL APPROACH · NATURE · SOULS · FUEL · INTENTIONS · ACIONE BOMBEIROS · OPERAÇÃO COMPLETA · ENCERRAR EMERGÊNCIA</div>
   </div>
 
   <div id="sidebar">
@@ -93,7 +93,7 @@
        autorize aproximações ILS e pousos, libere decolagens e suba as saídas pelas SIDs até a
        transferência ao Centro. Mantenha <b>3 NM / 1.000 ft</b> de separação — o STCA avisa, mas a
        fita não perdoa.</p>
-    <p class="tiny" id="versionLine">Versão —</p>
+    <p class="tiny versionLink" id="versionLine" title="Ver changelog" role="button" tabindex="0">Versão —</p>
     <div class="pickRow">
       <span>Aeroporto/Fase:</span>
       <span id="airportPick"><em class="loading">carregando…</em></span>
@@ -201,6 +201,15 @@
   </div>
 </div>
 
+<!-- ===== changelog ===== -->
+<div id="changelogModal" class="modal hidden">
+  <div class="modalBox changelog">
+    <button class="close">✕</button>
+    <h2>Changelog</h2>
+    <div id="changelogBody" class="changelogBody"></div>
+  </div>
+</div>
+
 <!-- ===== cartas ===== -->
 <div id="chartsModal" class="modal hidden">
   <div class="modalBox charts">
@@ -236,7 +245,13 @@
       <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>). Se a condicional for lateral (<code>DCT</code>/<code>P</code>), a aeronave mantém a proa de pista até disparar, em vez de engatar a SID aos 900 ft</td></tr>
       <tr><td><code>DCT GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela). Alias de compatibilidade: <code>DIR</code></td></tr>
       <tr><td><code>VIA</code><br><code>SUBA VIA SID</code> / <code>DESCEND VIA STAR</code></td><td>Chegada: descer via STAR (cumpre as restrições da carta). Saída: <b>subir via SID</b> — segue a navegação da carta e sobe até o teto publicado; combine com a decolagem (<code>DEC 09R VIA</code>) ou com condicional (<code>DEC 09R APOS 5 VIA</code>)</td></tr>
-      <tr><td><code>ILS 09L</code><br><code>AUTORIZADO ILS PISTA 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
+      <tr><td><code>ILS 09L</code><br><code>AUTORIZADO ILS PISTA 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa). Pode ser reautorizada a qualquer momento para trocar de pista</td></tr>
+      <tr><td><code>VISUAL 09L</code><br><code>APROXIMAÇÃO VISUAL PISTA 09L</code><br><code>CLEARED VISUAL APPROACH RWY 09L</code></td><td>Autoriza aproximação visual (alinhamento pelo eixo da pista). Exige aeroporto à vista (<code>REPORTE AEROPORTO</code> ou dentro de ~22 NM). <code>CANCELVISUAL</code> / <code>CANCELAR VISUAL</code> cancela e aguarda instruções; <code>ILS</code> retorna ao instrumental</td></tr>
+      <tr><td><code>CANCELSTAR</code><br><code>CANCELAR STAR</code> / <code>CANCEL STAR</code></td><td>Cancela a STAR — a aeronave deixa a carta e mantém a proa atual aguardando vetores (não cancela ILS/visual já autorizado)</td></tr>
+      <tr><td><code>VETORES</code><br><code>VETORES RADAR</code> / <code>RADAR VECTORS</code></td><td>Vetoração radar: cancela STAR e aproximação; mantém a proa atual até nova autorização (<code>P</code>, <code>ILS</code>, <code>VISUAL</code>…)</td></tr>
+      <tr><td><code>RESUME</code><br><code>RETOME A NAVEGAÇÃO</code> / <code>RESUME OWN NAVIGATION</code><br><code>PROSSIGA CONFORME A ROTA</code></td><td>Retoma a STAR/SID planejada após vetores, proa ou DCT — reingressa pelo fixo mais próximo. Atalho contextual quando fora da rota</td></tr>
+      <tr><td><code>ALTPISTA 27R</code><br><code>ALTERAR PISTA PARA 27R</code><br><code>CHANGE RUNWAY TO 27R</code></td><td>Troca a pista da aproximação (mesmo tipo ILS/visual) ou autoriza ILS se ainda sem APP</td></tr>
+      <tr><td><code>RNAV 09L</code> / <code>VOR 09L</code></td><td>Reservado — se o aeroporto não publicar a carta, o piloto responde operacionalmente sugerindo ILS ou visual</td></tr>
       <tr><td><code>AP</code> / <code>POUSO 09L</code><br><code>CLEARED TO LAND</code></td><td>Autoriza o pouso (obrigatório antes de 1 NM final!)</td></tr>
       <tr><td><code>ALINHAR 09R</code><br><code>ALINHE E AGUARDE PISTA 09R</code></td><td>Alinhar e manter</td></tr>
       <tr><td><code>DEC 09R</code><br><code>CLEARED FOR TAKEOFF RWY 09R</code></td><td>Autoriza decolagem — a aeronave <b>mantém a proa de pista</b> aguardando instruções (use <code>VIA</code>, <code>P</code> ou <code>DCT</code> para navegar)</td></tr>
@@ -246,7 +261,9 @@
       <tr><td><code>STAR PEDRA1</code></td><td>Designa/troca a STAR — a aeronave reingressa pelo fixo mais próximo</td></tr>
       <tr><td><code>HO</code> / <code>TRANSFERIR</code></td><td>Transfere a saída ao Centro (só perto do fixo de saída e ≥ 9.000 ft — pontua mais que a transferência automática)</td></tr>
       <tr><td><code>REPORTE 5</code> · <code>REPORTE NITUS</code> · <code>REPORTE DEIXANDO 5000</code> · <code>REPORTE NIVELADO FL080</code></td><td>Pede um novo contato futuro por distância ao aeródromo, fixo, altitude ou nível de voo. A aeronave memoriza a condição, segue o voo normalmente e chama automaticamente quando cumprir</td></tr>
+      <tr><td><code>REPORTE AEROPORTO</code><br><code>REPORT AIRPORT IN SIGHT</code> · <code>REPORTEAERO</code></td><td>Piloto confirma aeroporto à vista (necessário para <code>VISUAL</code> se ainda longe). Se já estiver perto (~22 NM), confirma na hora; senão memoriza e reporta ao entrar na distância</td></tr>
       <tr><td><code>NATURE</code> · <code>SOULS</code> · <code>FUEL</code> · <code>INTENTIONS</code> · <code>RWY</code> · <code>STATUS</code></td><td>Perguntas rápidas da emergência: natureza, pessoas a bordo, combustível, intenções, pista preferida e situação atual. Funcionam pelo rádio normal, somem dos atalhos quando já respondidas e ficam registradas no painel da aeronave</td></tr>
+      <tr><td><code>ACIONE BOMBEIROS</code> / <code>DISPATCH FIRE</code><br><code>ACIONE AMBULÂNCIA</code> / <code>DISPATCH AMBULANCE</code><br><code>ACIONE EQUIPE MÉDICA</code> / <code>DISPATCH MEDICAL</code><br><code>ACIONE OPERAÇÃO COMPLETA</code> / <code>DISPATCH FULL</code><br><code>ENCERRAR EMERGÊNCIA</code> / <code>CANCEL EMERGENCY</code></td><td>Resposta de aeroporto: despacha ARFF, ambulância, equipe médica ou operação completa (veículos simulados). Encerrar só quando a ocorrência estiver segura (aeronave, serviço, pista e equipes). Domínio TWR no multiplayer; atalhos no painel com emergência ativa</td></tr>
     </table>
     <p>💡 <b>Antes da decolagem</b> você pode dar <code>A 2000</code>, <code>P 120</code> ou
        <code>DCT FAROL</code>: a aeronave cumpre após decolar (proa/direto substituem a SID aos
@@ -260,7 +277,7 @@
        <b>fixo</b> (monta <code>DCT</code>), numa <b>cabeceira</b> (monta <code>ILS</code>/<code>AP</code>/<code>DEC</code>)
        ou em <b>espaço vazio</b> (monta <code>P proa</code>) e confirme no botão 📡 ou Enter.
        Esc ou ✕ desselecionam. Pinça = zoom, arrastar = mover.</p>
-    <p>⚠ Em emergências, o topo mostra o estado operacional do aeroporto (<b>Normal</b>, <b>Emergência</b> ou <b>Recuperação</b>) e a aeronave selecionada ganha atalhos para a entrevista operacional. Reportes futuros e condicionais pendentes aparecem no painel da aeronave.</p>
+    <p>⚠ Em emergências, o topo mostra o estado operacional do aeroporto (<b>Normal</b>, <b>Emergência</b> ou <b>Recuperação</b>). A emergência <b>não fecha o aeroporto</b>: o Emergency Traffic Manager restringe só o que conflita (mesma faixa em final/pós-pouso); pistas paralelas independentes (SBCV N/S) podem continuar. O ATIS lista restrições temporárias. Veículos de emergência aparecem no radar quando despachados.</p>
     <p>🌬 O vento muda com o tempo — acompanhe pelo botão <b>ATIS</b> no topo. Com vento de cauda
        forte, troque as pistas em uso por lá.</p>
     <h3>Como pontuar</h3>
@@ -289,6 +306,11 @@
 <script src="engine/separation.js"></script>
 <script src="engine/holding.js"></script>
 <script src="engine/emergency.js"></script>
+<script src="engine/runway_state.js"></script>
+<script src="engine/emergency_units.js"></script>
+<script src="engine/emergency_response.js"></script>
+<script src="engine/emergency_traffic.js"></script>
+<script src="engine/approach.js"></script>
 <script src="engine/aircraft.js"></script>
 <script src="engine/commands.js"></script>
 <script src="engine/core.js"></script>

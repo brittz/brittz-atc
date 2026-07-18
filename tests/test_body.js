@@ -469,15 +469,29 @@ const depHold = new Aircraft({
   state: 'holdshort', sid: 'CACTO1', dest: 'SBGR',
 });
 depHold.rwy = '09R'; depHold.x = DATA.RUNWAYS['09R'].thr[0]; depHold.y = DATA.RUNWAYS['09R'].thr[1] - 0.18; depHold.hdg = 90;
-const depBlocked = depHold.cmdTakeoff('09R', core);
+core.aircraft.push(depHold);
+const depParallel = depHold.cmdTakeoff('09R', core); // paralela N/S — deve liberar
+const depSameRwy = new Aircraft({
+  cs: 'TAM9912', radio: 'LATAM', type: 'A320', kind: 'dep',
+  state: 'holdshort', sid: 'CACTO1', dest: 'SBSP',
+});
+depSameRwy.rwy = '09L'; depSameRwy.x = DATA.RUNWAYS['09L'].thr[0]; depSameRwy.y = DATA.RUNWAYS['09L'].thr[1] - 0.18; depSameRwy.hdg = 90;
+core.aircraft.push(depSameRwy);
+const depSameBlocked = depSameRwy.cmdTakeoff('09L', core); // mesma faixa da emergência — bloqueia
 emgAc.state = 'done';
 core.onRunwayVacated(emgAc);
 core.syncAirportState();
-console.log('EMGfull ->', stVector, stApproach, stLanding, stPost, '| depBlocked:', depBlocked.err || depBlocked.rb, '| airport:', core.airportState.state);
+console.log('EMGfull ->', stVector, stApproach, stLanding, stPost,
+  '| parallelOk:', !depParallel.err, '| sameBlocked:', !!depSameBlocked.err, '| airport:', core.airportState.state);
 console.log(stVector === 'vectoring' && stApproach === 'approach' && stLanding === 'landing' && stPost === 'post-landing' &&
-  depBlocked.err && core.airportState.state === 'recovery'
-  ? 'OK EMERG FLUXO COMPLETO (vetoração, aproximação, pouso, pós-pouso, recuperação e impacto no aeroporto)'
-  : 'FALHA EMERG FLUXO COMPLETO');
+  !depParallel.err && depSameBlocked.err && core.airportState.state === 'recovery'
+  ? 'OK EMERG FLUXO COMPLETO (vetoração, aproximação, pouso, pós-pouso, recuperação; paralela livre, mesma faixa retida)'
+  : 'FALHA EMERG FLUXO COMPLETO ' + JSON.stringify({
+    stVector, stApproach, stLanding, stPost,
+    parallel: depParallel.err || depParallel.rb,
+    same: depSameBlocked.err || depSameBlocked.rb,
+    airport: core.airportState.state,
+  }));
 
 // piora: bird strike -> engine failure
 const evoAc = core.aircraft.find(a => a.kind === 'dep') || core.aircraft[0];
@@ -538,6 +552,77 @@ console.log('EMGctx  -> far landing-gear?', farKinds.includes('landing-gear'), '
 console.log(!farKinds.includes('landing-gear') && nearKinds.includes('landing-gear') && depKinds.includes('landing-gear')
   ? 'OK EMERG CONTEXTO (trem de pouso só entra perto/na fase plausível)'
   : 'FALHA EMERG CONTEXTO');
+
+// ---------- Airport Emergency Response: despacho, pista, encerramento ----------
+const aerCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+const aerAc = aerCore.aircraft.find(a => a.kind === 'arr');
+aerCore.startEmergency(aerAc, 'engine-fire', { severity: 'critical' });
+const rDispFire = Commands.parse(aerAc.cs + ' ACIONE BOMBEIROS', aerCore);
+const rDispFull = Commands.parse(aerAc.cs + ' DISPATCH FULL', aerCore);
+const unitsAfter = (aerCore.emergencyResponse.units || []).filter(u => u.targetCs === aerAc.cs);
+const phasesDispatch = unitsAfter.map(u => u.phase);
+console.log('AERdisp ->', rDispFire.err || rDispFire.atcText, '| units:', unitsAfter.length, phasesDispatch.join(','));
+console.log(!rDispFire.err && !rDispFull.err && unitsAfter.length >= 1 &&
+  unitsAfter.some(u => u.type === 'arff' && u.phase !== 'at_base')
+  ? 'OK AER DESPACHO (bombeiros/operação completa → unidades ativas)'
+  : 'FALHA AER DESPACHO');
+
+// avanço até staging
+let taer = 0;
+while (taer < 60) {
+  aerCore.tick(0.5);
+  taer += 0.5;
+  if (unitsAfter.some(u => u.phase === 'staging')) break;
+}
+const staged = (aerCore.emergencyResponse.units || []).some(u => u.targetCs === aerAc.cs && u.phase === 'staging');
+console.log('AERstg  -> staging?', staged, 't=', Math.round(taer));
+console.log(staged ? 'OK AER STAGING (unidades no ponto de espera da pista)' : 'FALHA AER STAGING');
+
+// bloqueio de pista com aeronave imobilizada (fogo)
+aerAc.nav = { mode: 'hdg', hdg: 90, turn: null };
+aerAc.cmdIls('09L');
+aerAc.cmdLand('09L');
+aerCore.touchdown(aerAc);
+aerAc.spd = 0;
+const vacRefuse = aerAc.cmdVacate(null);
+const rwyBlocked = RunwayState.isUnavailable(aerCore.runwayMgr, '09L', aerCore);
+const landBlock = aerCore.runwayOccupied('09L', aerAc);
+console.log('AERblk  -> vacate:', vacRefuse.err || vacRefuse.rb, '| blocked?', rwyBlocked, '| occupied?', landBlock);
+console.log(vacRefuse.err && rwyBlocked && landBlock
+  ? 'OK AER BLOQUEIO (imobilizada, LIVRAR recusado, pista indisponível)'
+  : 'FALHA AER BLOQUEIO');
+
+// encerrar cedo deve falhar enquanto imobilizada
+const rEndEarly = Commands.parse(aerAc.cs + ' ENCERRAR EMERGENCIA', aerCore);
+console.log('AERendE ->', rEndEarly.results && (rEndEarly.results[0].err || rEndEarly.results[0].rb));
+console.log(rEndEarly.results && rEndEarly.results[0].err
+  ? 'OK AER ENCERRAR CEDO (recusado com aeronave na pista)'
+  : 'FALHA AER ENCERRAR CEDO');
+
+// simula serviço concluído → permite livrar → vacate → encerrar
+aerAc.emergency.flags = aerAc.emergency.flags || {};
+aerAc.emergency.flags.vacateAllowedAfterResponse = true;
+for (const u of aerCore.emergencyResponse.units.filter(x => x.targetCs === aerAc.cs)) {
+  u.phase = 'returning';
+  EmergencyUnits.recall(u);
+}
+RunwayState.startInspection(aerCore.runwayMgr, '09L', aerCore.time + 5);
+const vacOk = aerAc.cmdVacate(null);
+aerAc.state = 'done';
+aerCore.onRunwayVacated(aerAc);
+aerCore.syncAirportState();
+const closedOrRecovery = !aerAc.emergency.active || aerCore.airportState.state === 'recovery';
+console.log('AERend  -> vacate ok?', !vacOk.err, '| active?', aerAc.emergency.active, '| airport:', aerCore.airportState.state);
+console.log(!vacOk.err && closedOrRecovery
+  ? 'OK AER ENCERRAMENTO (após serviço, livrar e recovery)'
+  : 'FALHA AER ENCERRAMENTO');
+
+// snapshot inclui unidades/pistas
+const snap = aerCore.serialize();
+console.log('AERsnap -> units', (snap.emergencyUnits || []).length, '| runwayStates', !!snap.runwayStates);
+console.log(snap.emergencyUnits && snap.runwayStates && snap.emergencyResponse
+  ? 'OK AER SNAPSHOT (emergencyUnits + runwayStates + emergencyResponse)'
+  : 'FALHA AER SNAPSHOT');
 
 // iniciativas gerais dos pilotos fora da emergência
 const aiCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
@@ -763,3 +848,135 @@ const ru8 = !!ruCore.serialize().runwayUse;
 console.log([ru1,ru2,ru3,ru4,ru5,ru6,ru7,ru8].every(Boolean)
   ? 'OK USO DE PISTAS (padrao, ambas, so-dec, validacao, alternancia, inversao, snapshot)'
   : 'FALHA USO DE PISTAS ' + JSON.stringify({ru1,ru2,ru3,ru4,ru5,ru6,ru7,ru8}));
+
+// ---------- reatribuição de aproximação / pista (v1) ----------
+const reArr = new Aircraft({
+  cs: 'TAM8801', radio: 'LATAM', type: 'A320', kind: 'arr',
+  x: -25, y: 30, alt: 10000, spd: 250, hdg: 120,
+  star: 'SABIA1', nav: { mode: 'route', route: DATA.STARS.SABIA1.route.map(r => r.fix), idx: 1 },
+});
+game.aircraft.push(reArr);
+
+// Cancelar STAR → hdg, star limpa, sem APP
+const re1 = Commands.parse('TAM8801 CANCELAR STAR', game);
+const re1ok = !re1.err && !re1.results[0].err && !reArr.star && reArr.nav.mode === 'hdg' && reArr.app.phase === 'none';
+
+// Vetores naturais
+reArr.star = 'PEDRA1'; reArr.via = true;
+reArr.nav = { mode: 'route', route: ['NIDOL'], idx: 0 };
+reArr.cmdIls('09L');
+const re2 = Commands.parse('TAM8801 RADAR VECTORS', game);
+const re2ok = !re2.err && !re2.results[0].err && !reArr.star && !reArr.via
+  && reArr.app.phase === 'none' && reArr.nav.mode === 'hdg';
+
+// Longe: visual rejeitado sem aeroporto à vista
+reArr.x = -25; reArr.y = 30; reArr.airportInSight = false; reArr.sightRequested = false;
+const reFar = Commands.parse('TAM8801 CLEARED VISUAL APPROACH RUNWAY 09L', game);
+const reFarOk = !reFar.err && reFar.results[0].err && reFar.results[0].errKind === 'ops';
+
+// REPORTE AEROPORTO perto (~14 NM) + VISUAL
+reArr.x = -12; reArr.y = 8; reArr.airportInSight = false; reArr.sightRequested = false;
+const reSight = Commands.parse('TAM8801 REPORTE AEROPORTO', game);
+const reSightOk = !reSight.err && !reSight.results[0].err && reArr.airportInSight;
+const re3 = Commands.parse('TAM8801 CLEARED VISUAL APPROACH RUNWAY 09L', game);
+const re3ok = !re3.err && !re3.results[0].err && reArr.app.type === 'visual' && reArr.app.rwy === '09L';
+const re4 = Commands.parse('TAM8801 ALTERAR PISTA PARA 27R', game);
+const re4ok = !re4.err && !re4.results[0].err && reArr.app.rwy === '27R' && reArr.app.type === 'visual';
+const re5 = Commands.parse('TAM8801 CANCELAR VISUAL', game);
+const re5ok = !re5.err && !re5.results[0].err && reArr.app.phase === 'none';
+
+// Visual → ILS (reclaim instrumental)
+reArr.airportInSight = true;
+const reVis = Commands.parse('TAM8801 VISUAL 09L', game);
+const reIlsBack = Commands.parse('TAM8801 ILS 09L', game);
+const reVisIlsOk = !reVis.err && !reVis.results[0].err && !reIlsBack.err && !reIlsBack.results[0].err
+  && reArr.app.type === 'ils' && reArr.app.rwy === '09L' && reArr.app.phase === 'cleared';
+
+// ILS mid-approach: troca de pista reinicia phase cleared
+reArr.cmdIls('09L');
+reArr.app.phase = 'loc';
+const reSwitch = Commands.parse('TAM8801 ILS 27R', game);
+const reSwitchOk = !reSwitch.err && !reSwitch.results[0].err
+  && reArr.app.type === 'ils' && reArr.app.rwy === '27R' && reArr.app.phase === 'cleared';
+
+// ILS e ALTPISTA (mesmo tipo)
+const re6 = Commands.parse('TAM8801 ILS 09L', game);
+const re6a = Commands.parse('TAM8801 ALTPISTA 27L', game);
+const re6ok = !re6.err && !re6a.err && reArr.app.type === 'ils' && reArr.app.rwy === '27L' && !reArr.landClr;
+
+// RNAV stub operacional
+const re7 = Commands.parse('TAM8801 RNAV PISTA 09L', game);
+const re7ok = !re7.err && re7.results[0].err && re7.results[0].errKind === 'ops';
+
+// Cancel STAR nao derruba ILS já autorizado
+reArr.star = 'SABIA1';
+reArr.nav = { mode: 'route', route: DATA.STARS.SABIA1.route.map(r => r.fix), idx: 2 };
+reArr.cmdIls('09L');
+const re8 = Commands.parse('TAM8801 CANCEL STAR', game);
+const re8ok = !re8.err && !reArr.star && reArr.app.phase === 'cleared' && reArr.app.type === 'ils';
+
+console.log([re1ok, re2ok, reFarOk, reSightOk, re3ok, re4ok, re5ok, reVisIlsOk, reSwitchOk, re6ok, re7ok, re8ok].every(Boolean)
+  ? 'OK REATRIBUICAO APP (cancel STAR, vetores, visual+sight, altpista, RNAV stub)'
+  : 'FALHA REATRIBUICAO APP ' + JSON.stringify({ re1ok, re2ok, reFarOk, reSightOk, re3ok, re4ok, re5ok, reVisIlsOk, reSwitchOk, re6ok, re7ok, re8ok,
+    re1, re2, reFar: reFar && reFar.results, reSight: reSight && reSight.results, re3: re3 && re3.results, re4: re4 && re4.results, re7: re7 && re7.results }));
+
+// ---------- Resume own navigation ----------
+const rnCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+const rnArr = new Aircraft({
+  cs: 'AZU8700', radio: 'Azul', type: 'A20N', kind: 'arr',
+  x: U.fix('PREMA')[0], y: U.fix('PREMA')[1], alt: 9000, spd: 250, hdg: 120,
+  star: 'SABIA1',
+  nav: { mode: 'route', route: DATA.STARS.SABIA1.route.map(r => r.fix), idx: 2 },
+});
+rnCore.aircraft.push(rnArr);
+Approach.captureFlightPlan(rnArr);
+const rnOnRoute = Approach.canResume(rnArr) === false;
+Commands.parse('AZU8700 RADAR VECTORS', rnCore);
+const rnVectored = rnArr.nav.mode === 'hdg' && !rnArr.star && rnArr.flightPlan && rnArr.flightPlan.name === 'SABIA1';
+const rnCan = Approach.canResume(rnArr) === true;
+const rn1 = Commands.parse('AZU8700 RESUME OWN NAVIGATION', rnCore);
+const rn1ok = !rn1.err && !rn1.results[0].err && rnArr.star === 'SABIA1' && rnArr.nav.mode === 'route'
+  && rnArr.nav.route[0] && DATA.STARS.SABIA1.route.some(r => r.fix === rnArr.nav.route[0]);
+const rn2 = Commands.parse('AZU8700 RETOME A NAVEGACAO', rnCore);
+const rn2ok = !rn2.err && !rn2.results[0].err && /já na navegação/i.test(rn2.results[0].rb || '');
+Commands.parse('AZU8700 P 270', rnCore);
+const rn3 = Commands.parse('AZU8700 PROSSIGA CONFORME A ROTA', rnCore);
+const rn3ok = !rn3.err && !rn3.results[0].err && rnArr.nav.mode === 'route' && rnArr.star === 'SABIA1';
+console.log('RESUME ->', rn1.atcText, '| can after vectors?', rnCan);
+console.log(rnOnRoute && rnVectored && rnCan && rn1ok && rn2ok && rn3ok
+  ? 'OK RESUME NAV (vetores preservam plano, reingresso, já-na-rota, pt)'
+  : 'FALHA RESUME NAV ' + JSON.stringify({ rnOnRoute, rnVectored, rnCan, rn1ok, rn2ok, rn3ok, rb: rn1.results, star: rnArr.star, nav: rnArr.nav }));
+
+// ---------- Emergency Traffic Manager ----------
+const etmCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+const etmEmg = new Aircraft({
+  cs: 'TAM9600', radio: 'LATAM', type: 'A320', kind: 'arr',
+  x: -25, y: 0, alt: 5000, spd: 200, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+etmCore.aircraft.push(etmEmg);
+etmCore.startEmergency(etmEmg, 'engine-failure', { severity: 'high' });
+etmEmg.emergency.info.runway = '09L';
+etmEmg.emergency.stage = 'vectoring';
+// Longe (> FAR): mesma faixa ainda pode decolar
+const etmDepFar = new Aircraft({
+  cs: 'GLO9601', radio: 'Gol', type: 'B738', kind: 'dep',
+  state: 'holdshort', sid: 'CACTO1', dest: 'SBGR',
+});
+etmDepFar.rwy = '09L';
+etmCore.aircraft.push(etmDepFar);
+const etmFarOk = !etmCore.shouldHoldDeparture('09L', etmDepFar);
+// Paralela sempre livre (independente)
+const etmParOk = !etmCore.shouldHoldDeparture('09R', etmDepFar);
+// Aproxima para dentro de CLOSE_NM → mesma faixa retém
+etmEmg.x = -8; etmEmg.y = 0; etmEmg.app = { phase: 'cleared', rwy: '09L' };
+etmEmg.emergency.stage = 'approach';
+const etmCloseHold = etmCore.shouldHoldDeparture('09L', etmDepFar);
+const etmClosePar = !etmCore.shouldHoldDeparture('09R', etmDepFar);
+const etmWhy = etmCore.departureHoldReason('09L', etmDepFar);
+const etmWhyOk = !!etmWhy && /temporariamente|aproximação|emergência/i.test(etmWhy);
+console.log('ETM -> farSame?', etmFarOk, '| par?', etmParOk, '| closeHold?', etmCloseHold, '| closePar?', etmClosePar);
+console.log(etmFarOk && etmParOk && etmCloseHold && etmClosePar && etmWhyOk
+  ? 'OK EMERGENCY TRAFFIC (longe libera, paralela livre, final retém com motivo)'
+  : 'FALHA EMERGENCY TRAFFIC ' + JSON.stringify({ etmFarOk, etmParOk, etmCloseHold, etmClosePar, etmWhy }));
+

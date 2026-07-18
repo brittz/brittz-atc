@@ -9,7 +9,12 @@
 ```
 engine/            motor compartilhado (browser + Node)
   data.js          (movido de js/data.js — DATA + U)
-  emergency.js     NOVO: perfis/estados/evolução das emergências
+  emergency.js     perfis/estados/evolução das emergências (V2)
+  runway_state.js  estados por pista (livre/ocupada/bloqueada/inspeção)
+  emergency_units.js  veículos de resposta (ARFF, ambulância, etc.)
+  emergency_response.js  despacho / fases da resposta de aeroporto
+  emergency_traffic.js restrições contextuais de tráfego durante emergência
+  approach.js      Procedure/Nav/Approach managers (STAR, ILS, visual, ALTPISTA…)
   aircraft.js      (movido de js/aircraft.js)
   commands.js      (movido de js/commands.js)
   core.js          NOVO: classe GameCore (simulação headless, extraída de js/main.js)
@@ -89,7 +94,7 @@ Servidor → Cliente:
 {t:'hello-ok', nick}
 {t:'session', code, host, state:'lobby'|'ativa', players:[{nick,pos}], cfg, traffic}
 {t:'start', airport:<JSON completo do aeroporto>, cfg, time}
-{t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, runwayUse, airportState, aircraft:[...]}
+{t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, runwayUse, airportState, runwayStates, emergencyUnits, emergencyResponse, aircraft:[...]}
 {t:'radio', who, cs?, radio?, text, cls?}
 {t:'chat', from, to?, text}
 {t:'event', kind:'banner'|'chime'|'alarm', ...payload}
@@ -102,8 +107,11 @@ maiúsculas. Sessão morre 60 s depois do último jogador sair.
 
 Primeiro token do comando (após callsign) define o domínio:
 - **TWR**: ALINHAR/LU, DEC/TO/CTO/DECOLAR/TAKEOFF/TKFF/TKOF, AP/POUSO/CTL,
-  ABORTAR/ABT/RTO/REJECT, LIVRAR/VACATE, TAXI/TAXIAR, CRZ/CRUZAR/CROSS/CRUZAMENTO, ARR/GA/ARREMETER
-- **APP**: todo o resto (A, V, P, DCT, VIA, ILS, STAR, SID, ESPERA, HO, APOS, REPORTE…)
+  ABORTAR/ABT/RTO/REJECT, LIVRAR/VACATE, TAXI/TAXIAR, CRZ/CRUZAR/CROSS/CRUZAMENTO, ARR/GA/ARREMETER,
+  DISPATCH_FIRE/DISPATCH_AMBULANCE/DISPATCH_MEDICAL/DISPATCH_FULL, END_EMERGENCY
+  (aliases naturais: ACIONE BOMBEIROS, ENCERRAR EMERGÊNCIA, etc. — canonicamente os tokens acima)
+- **APP**: todo o resto (A, V, P, DCT, VIA, ILS, VISUAL, CANCELSTAR, VETORES,
+  ALTPISTA, CANCELVISUAL, RNAV, VOR, STAR, SID, ESPERA, HO, APOS, REPORTE…)
 - **OBS**: nenhum comando; só chat.
 Regra: se a posição dona do comando estiver ocupada por OUTRO jogador, quem não é o
 dono recebe `{t:'error', msg:'instrução da posição TWR/APP'}`. Se a posição está vaga,
@@ -114,13 +122,25 @@ qualquer jogador (não-OBS) pode dar o comando (cobertura).
 Whitelist (nada além disso): `cs, radio, type, kind, x, y, alt, spd, hdg, vs, clrAlt,
 clrSpd, spdMode, state, nav, app, landClr, star, sid, dest, rwy, emergency, via, stca,
 goingAround, timer, vacateClr, vacateSide, pilotAi:{pendingAsk,standbyUntil}, heliState, heliAuto, hovering, hoverPos, hoverHdg, crossRequested, crossCleared, wptExit,
-trail, pending:[{label}], reports:[{label}]`.
+trail, pending:[{label}], reports:[{label}], airportInSight, sightRequested, flightPlan:{type,name,route}.
+
+`app` é `{phase:'none'|'cleared'|'loc'|'gs', rwy, type:'ils'|'visual'|null}` — `type`
+distingue ILS de aproximação visual (mesmo eixo de pista na v1).
 
 `airportState` do snapshot é um objeto leve `{state:'normal'|'emergency'|'recovery',
 label, active:[callsigns], emergencyCs?, summary?}`. O campo `emergency` da aeronave
 também é serializado como resumo leve (`active, kind, title, declaration, severity,
 stage, evolution, answers, info, outcome, resultNote`) para o cliente reidratar com
 o módulo `engine/emergency.js` sem depender do servidor para a UI.
+
+Campos de resposta de aeroporto (Airport Emergency Response):
+- `runwayStates`: mapa `{[rwyId]: {state, reason, blockedBy, until, label}}` — estados
+  `free|occupied|blocked|inspecting|cleared` (ver `engine/runway_state.js`).
+- `emergencyUnits`: lista de veículos `{id, type, x, y, hdg, phase, targetRwy, targetCs,
+  short, color, ...}` para o radar desenhar marcadores.
+- `emergencyResponse`: `{occurrences:{[cs]:{phase, assistance, dispatched, ...}}, units}`
+  (espelho completo leve; `emergencyUnits` no topo do snap é a lista pronta para UI).
+
 No cliente MP, cada snapshot HIDRATA instâncias reais de `Aircraft`
 (`Object.assign(new Aircraft({...}), dados)`) para radar.js/ui.js funcionarem sem
 mudanças; entre snapshots o cliente roda `ac.update(dt, coreFake)` para interpolar

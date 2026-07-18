@@ -37,6 +37,24 @@ const Commands = (() => {
     navResume: new Set(['NAVIGACAO', 'NAVEGACAO', 'NAVIGATION', 'VOO', 'FLIGHT']),
     via: new Set(['VIA']),
     ils: new Set(['ILS']),
+    visual: new Set(['VISUAL', 'VIS']),
+    rnav: new Set(['RNAV', 'RNP', 'GPS']),
+    vor: new Set(['VOR']),
+    cancel: new Set(['CANCELAR', 'CANCEL', 'CANCELE', 'ENCERRAR', 'ENCERRE', 'END']),
+    dispatch: new Set(['ACIONE', 'ACIONAR', 'DISPATCH', 'ACTIVATE', 'ATIVAR']),
+    dispatchFire: new Set(['BOMBEIROS', 'BOMBEIRO', 'FIRE', 'ARFF', 'CBM']),
+    dispatchAmb: new Set(['AMBULANCIA', 'AMBULÂNCIA', 'AMBULANCE', 'AMB']),
+    dispatchMed: new Set(['MEDICA', 'MEDICAL', 'MEDICOS', 'MEDICO', 'EQUIPE']),
+    dispatchFull: new Set(['COMPLETA', 'COMPLETO', 'FULL', 'TOTAL']),
+    dispatchOp: new Set(['OPERACAO', 'OPERAÇÃO', 'OPERATION', 'RESPONSE', 'EMERGENCIA', 'EMERGÊNCIA', 'EMERGENCY']),
+    emergWord: new Set(['EMERGENCIA', 'EMERGÊNCIA', 'EMERGENCY', 'EMERG']),
+    vectors: new Set(['VETORES', 'VECTORS', 'VECTOR']),
+    radar: new Set(['RADAR']),
+    resume: new Set(['RETOME', 'RETOMAR', 'REASSUMA', 'REASSUMIR', 'RESUME']),
+    ownNav: new Set(['NAVEGACAO', 'NAVIGATION', 'ROTA', 'ROUTE', 'COURSE', 'PLANO']),
+    ownNavOwn: new Set(['PROPRIA', 'OWN', 'SUA', 'YOUR']),
+    published: new Set(['PUBLICADA', 'PUBLISHED', 'FLIGHT', 'PLAN', 'VOO']),
+    changeRwy: new Set(['ALTERAR', 'MUDA', 'MUDAR', 'TROCAR', 'CHANGE']),
     land: new Set(['AP', 'POUSO', 'POUSAR', 'LAND', 'LANDING']),
     lineup: new Set(['ALINHAR', 'ALINHE', 'LINEUP']),
     wait: new Set(['AGUARDE', 'MANTENHA', 'HOLD', 'WAIT']),
@@ -74,6 +92,8 @@ const Commands = (() => {
     delay: new Set(['ATRASO', 'DELAY']),
     cross: new Set(['CRZ', 'CRUZAR', 'CROSS', 'CRUZAMENTO']),
     report: new Set(['REPORTE', 'REPORTAR', 'REPORT', 'REP']),
+    airport: new Set(['AEROPORTO', 'AIRPORT', 'CAMPO', 'FIELD']),
+    inSight: new Set(['VISTA', 'SIGHT', 'AVISTA']),
     after: new Set(['APOS', 'AFTER']),
     reaching: new Set(['ATINGINDO', 'ATINGIR', 'REACHING', 'REACH']),
     leaving: new Set(['DEIXANDO', 'LEAVING']),
@@ -106,9 +126,12 @@ const Commands = (() => {
     'AGUARDE','STANDBY','STBY','PREVISAO','EXPECT','ATRASO','DELAY',
     'HOVER','PAIRADO','PAIRE','PAIRAR','PROSSEGUIR','CONTINUAR','CONTINUE',
     'CRZ','CRUZAR','CROSS','CRUZAMENTO',
-    'REPORTE','REPORTAR','REPORT','REP',
+    'REPORTE','REPORTAR','REPORT','REP','REPORTEAERO',
+    'CANCELSTAR','VETORES','VISUAL','CANCELVISUAL','ALTPISTA','RNAV','VOR','RNP',
+    'RESUME','RETORNAR','OWNNAV',
     'NATURE','NATUREZA','NAT','SOULS','POB','FUEL','COMB','COMBUSTIVEL','COMBUSTÍVEL',
     'INTENTIONS','INTENCOES','INTENÇÕES','INTENT','RWY','RUNWAY','PISTA','STATUS','EMERG','EMERGENCIA','EMERGÊNCIA',
+    'DISPATCH_FIRE','DISPATCH_AMBULANCE','DISPATCH_MEDICAL','DISPATCH_FULL','END_EMERGENCY',
   ]);
 
   function fold(s) {
@@ -460,6 +483,22 @@ const Commands = (() => {
 
       if (inSet(t, WORDS.proceed)) {
         const j = nextMeaningful(tokens, i + 1);
+        // PROSSIGA CONFORME A ROTA / PROCEED ON COURSE / CONTINUE OWN NAVIGATION → RESUME
+        // (CONTINUE NAVIGATION sozinho continua sendo PROSSEGUIR p/ hover)
+        const resumePhrase = tokens[j] === 'CONFORME'
+          || (tokens[j] === 'ON' && tokens[j + 1] === 'COURSE')
+          || (inSet(tokens[j], WORDS.ownNavOwn) && inSet(tokens[j + 1], WORDS.ownNav))
+          || (tokens[j] === 'FLIGHT' && tokens[j + 1] === 'PLAN')
+          || (tokens[j] === 'PUBLISHED' && inSet(tokens[j + 1], WORDS.ownNav));
+        if (resumePhrase) {
+          let k = j;
+          while (k < tokens.length && (
+            inSet(tokens[k], WORDS.optional) || inSet(tokens[k], WORDS.ownNav)
+            || inSet(tokens[k], WORDS.ownNavOwn) || tokens[k] === 'CONFORME' || tokens[k] === 'ON'
+            || inSet(tokens[k], WORDS.published) || tokens[k] === 'A' || tokens[k] === 'SUA'
+          )) k++;
+          out.push('RESUME'); i = k; continue;
+        }
         if (inSet(tokens[j], WORDS.direct)) {
           const fix = parseFixPhrase(tokens, j + 1, true);
           if (fix) { out.push('DCT', fix.token); i = fix.next; continue; }
@@ -493,6 +532,143 @@ const Commands = (() => {
         if (rw.token) out.push(rw.token);
         i = rw.token ? rw.next : i + 1;
         continue;
+      }
+
+      // APROXIMAÇÃO VISUAL / VISUAL [APPROACH] [PISTA] rwy
+      if (inSet(t, WORDS.expectApp) || t === 'APROXIMACAO') {
+        const j0 = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j0], WORDS.visual)) {
+          let j = nextMeaningful(tokens, j0 + 1);
+          while (j < tokens.length && (inSet(tokens[j], WORDS.expectApp) || inSet(tokens[j], WORDS.optional)))
+            j = nextMeaningful(tokens, j + 1);
+          const rw = parseRunwayPhrase(tokens, j);
+          out.push('VISUAL');
+          if (rw.token) out.push(rw.token);
+          i = rw.token ? rw.next : j0 + 1;
+          continue;
+        }
+      }
+      if (inSet(t, WORDS.visual)) {
+        let j = nextMeaningful(tokens, i + 1);
+        while (j < tokens.length && (inSet(tokens[j], WORDS.expectApp) || inSet(tokens[j], WORDS.optional)))
+          j = nextMeaningful(tokens, j + 1);
+        const rw = parseRunwayPhrase(tokens, j);
+        out.push('VISUAL');
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : i + 1;
+        continue;
+      }
+
+      // RNAV / VOR [PISTA] rwy (stub operacional se não houver carta)
+      if (inSet(t, WORDS.rnav) || inSet(t, WORDS.vor)) {
+        const kind = inSet(t, WORDS.vor) ? 'VOR' : 'RNAV';
+        const rw = parseRunwayPhrase(tokens, i + 1);
+        out.push(kind);
+        if (rw.token) out.push(rw.token);
+        i = rw.token ? rw.next : i + 1;
+        continue;
+      }
+
+      // Resposta de emergência: ACIONE BOMBEIROS / DISPATCH FIRE / ...
+      if (inSet(t, WORDS.dispatch) || t === 'DISPATCH' || t === 'ACIONE' || t === 'ACIONAR') {
+        let j = nextMeaningful(tokens, i + 1);
+        // ACTIVATE EMERGENCY RESPONSE / ACIONE OPERACAO COMPLETA
+        if (inSet(tokens[j], WORDS.dispatchOp) || inSet(tokens[j], WORDS.emergWord)) {
+          let k = nextMeaningful(tokens, j + 1);
+          if (inSet(tokens[k], WORDS.dispatchFull) || inSet(tokens[k], WORDS.dispatchOp) ||
+              tokens[k] === 'RESPONSE' || !tokens[k]) {
+            out.push('DISPATCH_FULL');
+            i = tokens[k] ? k + 1 : j + 1;
+            continue;
+          }
+        }
+        if (inSet(tokens[j], WORDS.dispatchFire)) {
+          out.push('DISPATCH_FIRE'); i = j + 1; continue;
+        }
+        if (inSet(tokens[j], WORDS.dispatchAmb)) {
+          out.push('DISPATCH_AMBULANCE'); i = j + 1; continue;
+        }
+        // EQUIPE MEDICA / MEDICAL TEAM
+        if (inSet(tokens[j], WORDS.dispatchMed)) {
+          let k = nextMeaningful(tokens, j + 1);
+          if (inSet(tokens[k], WORDS.dispatchMed) || tokens[k] === 'TEAM' || tokens[k] === 'MEDICA')
+            k++;
+          out.push('DISPATCH_MEDICAL'); i = k; continue;
+        }
+        if (inSet(tokens[j], WORDS.dispatchFull) ||
+            (inSet(tokens[j], WORDS.dispatchOp) && inSet(tokens[nextMeaningful(tokens, j + 1)], WORDS.dispatchFull))) {
+          out.push('DISPATCH_FULL');
+          let k = j + 1;
+          if (inSet(tokens[j], WORDS.dispatchOp)) k = nextMeaningful(tokens, j + 1) + 1;
+          i = k; continue;
+        }
+      }
+      // OPERACAO COMPLETA sem verbo (atalho)
+      if (inSet(t, WORDS.dispatchOp) && inSet(tokens[i + 1], WORDS.dispatchFull)) {
+        out.push('DISPATCH_FULL'); i += 2; continue;
+      }
+
+      // CANCELAR STAR / CANCEL VISUAL / CANCELAR EMERGÊNCIA / ENCERRAR EMERGÊNCIA
+      if (inSet(t, WORDS.cancel)) {
+        let j = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j], WORDS.star)) { out.push('CANCELSTAR'); i = j + 1; continue; }
+        if (inSet(tokens[j], WORDS.visual)) { out.push('CANCELVISUAL'); i = j + 1; continue; }
+        if (inSet(tokens[j], WORDS.expectApp)) {
+          out.push('CANCELVISUAL');
+          i = j + 1;
+          continue;
+        }
+        if (inSet(tokens[j], WORDS.emergWord) || inSet(tokens[j], WORDS.standbyEmerg)) {
+          out.push('END_EMERGENCY'); i = j + 1; continue;
+        }
+      }
+
+      // VETORES [RADAR] / RADAR VECTORS
+      if (inSet(t, WORDS.radar) && inSet(tokens[i + 1], WORDS.vectors)) {
+        out.push('VETORES'); i += 2; continue;
+      }
+      if (inSet(t, WORDS.vectors)) {
+        let j = i + 1;
+        if (inSet(tokens[j], WORDS.radar)) j++;
+        out.push('VETORES'); i = j; continue;
+      }
+
+      // RETOME [A/SUA] NAVEGAÇÃO / RESUME OWN NAVIGATION / PROSSIGA CONFORME A ROTA
+      if (inSet(t, WORDS.resume) || t === 'RETORNAR' || t === 'OWNNAV'
+        || (t === 'NAVEGACAO' && inSet(tokens[i + 1], WORDS.ownNavOwn))
+        || (t === 'PROCEED' && tokens[i + 1] === 'ON' && tokens[i + 2] === 'COURSE')) {
+        let j = i + 1;
+        while (j < tokens.length && (
+          inSet(tokens[j], WORDS.optional) || inSet(tokens[j], WORDS.ownNav)
+          || inSet(tokens[j], WORDS.ownNavOwn) || inSet(tokens[j], WORDS.published)
+          || tokens[j] === 'ON' || tokens[j] === 'CONFORME' || tokens[j] === 'COM'
+        )) j++;
+        out.push('RESUME'); i = j; continue;
+      }
+      if (t === 'PROSSIGA' || t === 'PROCEED') {
+        const j = nextMeaningful(tokens, i + 1);
+        if (tokens[j] === 'CONFORME' || (tokens[j] === 'ON' && tokens[j + 1] === 'COURSE')
+          || (inSet(tokens[j], WORDS.ownNav) && !inSet(tokens[j], WORDS.direct))) {
+          let k = j;
+          while (k < tokens.length && (
+            inSet(tokens[k], WORDS.optional) || inSet(tokens[k], WORDS.ownNav)
+            || inSet(tokens[k], WORDS.ownNavOwn) || tokens[k] === 'CONFORME' || tokens[k] === 'ON'
+            || inSet(tokens[k], WORDS.published)
+          )) k++;
+          out.push('RESUME'); i = k; continue;
+        }
+      }
+
+      // ALTERAR PISTA [PARA] rwy / CHANGE RUNWAY TO rwy
+      if (inSet(t, WORDS.changeRwy)) {
+        const j = nextMeaningful(tokens, i + 1);
+        if (inSet(tokens[j], WORDS.runway)) {
+          const rw = parseRunwayPhrase(tokens, j);
+          out.push('ALTPISTA');
+          if (rw.token) out.push(rw.token);
+          i = rw.token ? rw.next : j + 1;
+          continue;
+        }
       }
 
       if (inSet(t, WORDS.land)) {
@@ -623,8 +799,18 @@ const Commands = (() => {
       if (inSet(t, WORDS.cross)) { out.push('CRZ'); i++; continue; }
 
       if (inSet(t, WORDS.report)) {
+        let j = nextMeaningful(tokens, i + 1);
+        // REPORTE AEROPORTO [À VISTA] / REPORT AIRPORT [IN SIGHT]
+        if (inSet(tokens[j], WORDS.airport)) {
+          j = nextMeaningful(tokens, j + 1);
+          if (tokens[j] === 'IN' || tokens[j] === 'A' || tokens[j] === 'AO')
+            j = nextMeaningful(tokens, j + 1);
+          if (inSet(tokens[j], WORDS.inSight)) j = nextMeaningful(tokens, j + 1);
+          out.push('REPORTEAERO');
+          i = j;
+          continue;
+        }
         out.push('REPORTE');
-        const j = nextMeaningful(tokens, i + 1);
         if (inSet(tokens[j], WORDS.leaving)) {
           const alt = parseAltPhrase(tokens, j + 1);
           if (alt) { out.push('DEIXANDO', alt.token); i = alt.next; continue; }
@@ -768,6 +954,48 @@ const Commands = (() => {
           atcParts.push('autorizado aproximação ILS pista ' + arg);
           break;
         }
+        case 'VISUAL': {
+          if (!arg) { r = PilotReply.input('Informe a pista'); used = 1; break; }
+          r = ac.cmdVisual(arg);
+          if (!r.err) atcParts.push('autorizado aproximação visual pista ' + arg);
+          break;
+        }
+        case 'CANCELVISUAL': {
+          r = ac.cmdCancelVisual(); used = 1;
+          if (!r.err) atcParts.push('cancele a aproximação visual');
+          break;
+        }
+        case 'CANCELSTAR': {
+          r = ac.cmdCancelStar(); used = 1;
+          if (!r.err) atcParts.push('cancele a STAR');
+          break;
+        }
+        case 'VETORES': {
+          r = ac.cmdRadarVectors(); used = 1;
+          if (!r.err) atcParts.push('vetores radar, mantenha proa atual');
+          break;
+        }
+        case 'RESUME': case 'RETORNAR': case 'OWNNAV': {
+          r = ac.cmdResumeNav(); used = 1;
+          if (!r.err) atcParts.push('retome a navegação própria');
+          break;
+        }
+        case 'ALTPISTA': {
+          if (!arg) { r = PilotReply.input('Informe a pista'); used = 1; break; }
+          r = ac.cmdChangeRunway(arg);
+          if (!r.err) atcParts.push('altere para a pista ' + arg);
+          break;
+        }
+        case 'RNAV': case 'RNP': {
+          if (!arg) { r = PilotReply.input('Informe a pista'); used = 1; break; }
+          r = ac.cmdProcApproach('RNAV', arg);
+          break;
+        }
+        case 'VOR': {
+          if (!arg) { r = PilotReply.input('Informe a pista'); used = 1; break; }
+          r = ac.cmdProcApproach('VOR', arg);
+          break;
+        }
         case 'AP': case 'POUSO': case 'CTL': {
           r = ac.cmdLand(arg); used = arg && DATA.RUNWAYS[arg] ? 2 : 1;
           if (!r.err) atcParts.push('autorizado pouso pista ' + ac.app.rwy);
@@ -889,6 +1117,11 @@ const Commands = (() => {
           if (!r.err) atcParts.push('prossiga');
           break;
         }
+        case 'REPORTEAERO': {
+          r = ac.cmdReportAirportInSight(); used = 1;
+          if (!r.err) atcParts.push('reporte aeroporto à vista');
+          break;
+        }
         case 'REPORTE': case 'REPORTAR': case 'REPORT': case 'REP': {
           const rep = parseReport(tokens, i, ac);
           r = rep.r; used = rep.used;
@@ -923,6 +1156,36 @@ const Commands = (() => {
         case 'STATUS': case 'EMERG': case 'EMERGENCIA': case 'EMERGÊNCIA': {
           r = ac.cmdEmergencyQuery(cmd); used = 1;
           if (!r.err) atcParts.push('informe a situação atual');
+          break;
+        }
+        case 'DISPATCH_FIRE': {
+          r = game.dispatchEmergency ? game.dispatchEmergency(ac, 'FIRE') : { err: 'despacho indisponível' };
+          used = 1;
+          if (!r.err && r.atc) atcParts.push(r.atc);
+          break;
+        }
+        case 'DISPATCH_AMBULANCE': {
+          r = game.dispatchEmergency ? game.dispatchEmergency(ac, 'AMBULANCE') : { err: 'despacho indisponível' };
+          used = 1;
+          if (!r.err && r.atc) atcParts.push(r.atc);
+          break;
+        }
+        case 'DISPATCH_MEDICAL': {
+          r = game.dispatchEmergency ? game.dispatchEmergency(ac, 'MEDICAL') : { err: 'despacho indisponível' };
+          used = 1;
+          if (!r.err && r.atc) atcParts.push(r.atc);
+          break;
+        }
+        case 'DISPATCH_FULL': {
+          r = game.dispatchEmergency ? game.dispatchEmergency(ac, 'FULL') : { err: 'despacho indisponível' };
+          used = 1;
+          if (!r.err && r.atc) atcParts.push(r.atc);
+          break;
+        }
+        case 'END_EMERGENCY': {
+          r = game.endEmergencyResponse ? game.endEmergencyResponse(ac) : { err: 'encerramento indisponível' };
+          used = 1;
+          if (!r.err && r.atc) atcParts.push(r.atc);
           break;
         }
         default:

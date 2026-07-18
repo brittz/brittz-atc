@@ -16,6 +16,7 @@ const Radar = (() => {
     fix: '#33606e', fixTxt: '#4d8496', rwy: '#c8d8dc', ctrline: '#25505c',
     arr: '#5fd7ff', dep: '#7dff9f', hel: '#d4a7ff', sel: '#ffe066', warn: '#ffb454', alert: '#ff4d5e',
     trail: '#3a7a8a', route: '#2f6ea0', loc: '#3d8f5f', hold: '#8a7adf',
+    emgUnit: '#ff8c42',
   };
 
   function toScreen(x, y) {
@@ -194,8 +195,37 @@ const Radar = (() => {
     drawRunways();
     if (game.selected) drawIntent(game.selected);
     for (const a of game.aircraft) if (a.airborne || ['takeoff', 'rollout', 'lineup', 'holdshort', 'abort'].includes(a.state)) drawAircraft(a);
+    drawEmergencyUnits();
     drawConflicts();
     drawCursorInfo();
+  }
+
+  function drawEmergencyUnits() {
+    const units = game.emergencyUnits || [];
+    if (!units.length) return;
+    ctx.save();
+    for (const u of units) {
+      if (u.phase === 'at_base') continue;
+      const [sx, sy] = toScreen(u.x, u.y);
+      if (sx < -30 || sy < -30 || sx > vw + 30 || sy > vh + 30) continue;
+      ctx.fillStyle = u.color || C.emgUnit;
+      ctx.strokeStyle = u.color || C.emgUnit;
+      ctx.lineWidth = 1.2;
+      // losango pequeno
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 5);
+      ctx.lineTo(sx + 4, sy);
+      ctx.lineTo(sx, sy + 5);
+      ctx.lineTo(sx - 4, sy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#0a1218';
+      ctx.font = '9px Consolas, monospace';
+      ctx.fillText(u.short || 'EMG', sx + 6, sy + 3);
+      ctx.fillStyle = u.color || C.emgUnit;
+      ctx.fillText(u.short || 'EMG', sx + 6, sy + 3);
+    }
+    ctx.restore();
   }
 
   // linha entre pares em alerta STCA, com a distância atual
@@ -401,9 +431,13 @@ const Radar = (() => {
     const vsChar = a.vs > 150 ? '↑' : a.vs < -150 ? '↓' : ' ';
     const clrH = Math.round(a.clrAlt / 100);
     let l3 = '';
-    if (a.app.phase === 'gs') l3 = 'ILS ' + a.app.rwy + (a.landClr ? ' ✓P' : '');
-    else if (a.app.phase === 'loc') l3 = 'LOC ' + a.app.rwy;
-    else if (a.app.phase === 'cleared') l3 = '→ILS ' + a.app.rwy;
+    if (a.app.phase === 'gs') {
+      const tag = a.app.type === 'visual' ? 'VIS ' : 'ILS ';
+      l3 = tag + a.app.rwy + (a.landClr ? ' ✓P' : '');
+    } else if (a.app.phase === 'loc')
+      l3 = (a.app.type === 'visual' ? 'VIS ' : 'LOC ') + a.app.rwy;
+    else if (a.app.phase === 'cleared')
+      l3 = (a.app.type === 'visual' ? '→VIS ' : '→ILS ') + a.app.rwy;
     else if (a.nav.mode === 'hold') l3 = 'ESP ' + a.nav.fix;
     else if (a.via) l3 = 'VIA ' + a.star;
     else if (a.nav.mode === 'route' && a.nav.route[a.nav.idx]) l3 = '→' + a.nav.route[a.nav.idx];

@@ -525,7 +525,7 @@ const Emergency = (() => {
   function progressReport(e) {
     if (e.evolution === 'worsening') return 'emergência piorando, solicitamos prioridade máxima';
     if (e.evolution === 'improving') return 'situação melhorando, mantendo a aproximação';
-    return 'emergência em andamento, sem mudanças significativas';
+    return null;
   }
 
   function validateApproach(ac, rwy) {
@@ -572,7 +572,9 @@ const Emergency = (() => {
     e.effects = applySeverityToEffects(getProfile(e.kind).effects || {}, e.severity);
     if (e.kind === 'low-fuel' && rankSeverity(e.severity) >= 3) e.info.nature = 'combustível crítico';
     ac.emergency = e;
-    return { changed, text: progressReport(e) };
+    // Só reporta no rádio quando a situação muda de fato (piora/melhora)
+    if (!changed) return { changed: false, text: null };
+    return { changed: true, text: progressReport(e) };
   }
 
   function initiative(ac) {

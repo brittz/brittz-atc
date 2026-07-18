@@ -17,6 +17,9 @@ if (typeof Emergency === 'undefined' && typeof require !== 'undefined') {
 if (typeof Holding === 'undefined' && typeof require !== 'undefined') {
   globalThis.Holding = require('./holding.js').Holding;
 }
+if (typeof Approach === 'undefined' && typeof require !== 'undefined') {
+  globalThis.Approach = require('./approach.js').Approach;
+}
 
 // Respostas de recusa do piloto: input = erro do controlador (diagnóstico);
 // ops = comando entendido mas impossível na situação (fraseologia operacional).
@@ -67,7 +70,10 @@ class Aircraft {
       // navegação lateral
       nav: opts.nav ?? { mode: 'hdg', hdg: opts.hdg ?? 90, turn: null },
       via: false,                // "descer via STAR" autorizado
-      app: { phase: 'none', rwy: null }, // none|cleared|loc|gs
+      app: { phase: 'none', rwy: null, type: null }, // phase: none|cleared|loc|gs · type: ils|visual|null
+      airportInSight: opts.airportInSight ?? false,
+      sightRequested: opts.sightRequested ?? false,
+      flightPlan: opts.flightPlan ?? null, // STAR/SID/rota preservada p/ RESUME
       landClr: false,
       rwy: null,                 // pista em uso (decolagem/pouso)
       goingAround: false,
@@ -101,6 +107,8 @@ class Aircraft {
       },
     });
     this.tas = this.spd;
+    if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+      Approach.captureFlightPlan(this);
   }
 
   get airborne() { return this.state === 'air'; }
@@ -286,6 +294,8 @@ class Aircraft {
       this.depHdg = U.norm360(hdg);
       return { rb: 'Após a decolagem, proa ' + U.fmtHdg(hdg) };
     }
+    if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+      Approach.captureFlightPlan(this);
     this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
@@ -302,6 +312,8 @@ class Aircraft {
       this.depDct = fixName;
       return { rb: 'Após a decolagem, direto ' + fixName };
     }
+    if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+      Approach.captureFlightPlan(this);
     this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
@@ -356,16 +368,15 @@ class Aircraft {
     this.clearPilotAsk();
     return { rb: 'Descer via STAR ' + this.star };
   }
-  cmdIls(rwy) {
-    if (!this.airborne) return PilotReply.ops('impossível na fase atual');
-    if (!DATA.RUNWAYS[rwy]) return PilotReply.input('Pista ' + rwy + ' indisponível');
-    const emgErr = Emergency.validateApproach(this, rwy);
-    if (emgErr) return PilotReply.ops(emgErr);
-    this.app = { phase: 'cleared', rwy };
-    this.estabAnnounced = false;
-    this.clearPilotAsk();
-    return { rb: 'Autorizado ILS pista ' + rwy };
-  }
+  cmdIls(rwy) { return Approach.cmdIls(this, rwy); }
+  cmdVisual(rwy) { return Approach.cmdVisual(this, rwy); }
+  cmdCancelVisual() { return Approach.cmdCancelVisual(this); }
+  cmdCancelStar() { return Approach.cmdCancelStar(this); }
+  cmdRadarVectors() { return Approach.cmdRadarVectors(this); }
+  cmdResumeNav() { return Approach.cmdResumeNav(this); }
+  cmdChangeRunway(rwy) { return Approach.cmdChangeRunway(this, rwy); }
+  cmdProcApproach(kind, rwy) { return Approach.cmdProcApproach(kind, this, rwy); }
+  cmdReportAirportInSight() { return Approach.requestAirportInSight(this); }
   cmdLand(rwy) {
     if (this.app.phase === 'none' || (rwy && this.app.rwy !== rwy))
       return PilotReply.ops('não estamos na aproximação da pista ' + (rwy || '?'));
@@ -390,7 +401,10 @@ class Aircraft {
     if (!['holdshort','lineup'].includes(this.state)) return PilotReply.ops('impossível na fase atual');
     if (rwy && DATA.RWY_PAIR[rwy] === DATA.RWY_PAIR[this.rwy]) this.rwy = rwy;
     else if (rwy) return PilotReply.ops('estamos no ponto de espera da ' + this.rwy);
-    if (game && game.shouldHoldDeparture && game.shouldHoldDeparture(this.rwy, this))
+    if (game && game.departureHoldReason) {
+      const why = game.departureHoldReason(this.rwy, this);
+      if (why) return PilotReply.ops(why);
+    } else if (game && game.shouldHoldDeparture && game.shouldHoldDeparture(this.rwy, this))
       return PilotReply.ops('aguarde, prioridade para o tráfego em emergência na pista ' + this.rwy);
     const wasLinedUp = this.state === 'lineup';
     const r = DATA.RUNWAYS[this.rwy];
@@ -419,6 +433,12 @@ class Aircraft {
     if (!this.onRunway || this.state === 'takeoff') {
       if (this.state === 'takeoff') return PilotReply.ops('em rolagem — use ABORTAR / RTO antes de livrar');
       return PilotReply.ops('não estamos ocupando a pista');
+    }
+    // imobilizada por emergência: só livra após resposta em solo liberar
+    if (typeof EmergencyResponse !== 'undefined' && this.emergency &&
+        EmergencyResponse.cannotVacate(this.emergency) &&
+        !(this.emergency.flags && this.emergency.flags.vacateAllowedAfterResponse)) {
+      return PilotReply.ops('impossível livrar, aeronave imobilizada — aguardando equipes');
     }
     const sideTok = side && ['L', 'R', 'NEXT', 'ABLE'].includes(side) ? side : null;
     this.vacateClr = true;
@@ -466,6 +486,8 @@ class Aircraft {
   cmdHold(fixName, turn) {
     if (!this.airborne) return PilotReply.ops('ainda no solo');
     if (!U.fix(fixName)) return PilotReply.input('Fixo ' + fixName + ' não encontrado');
+    if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+      Approach.captureFlightPlan(this);
     this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
@@ -494,13 +516,19 @@ class Aircraft {
     if (!sid) return PilotReply.input('SID ' + name + ' inexistente');
     if (this.kind !== 'dep') return PilotReply.ops('somos uma chegada, não temos SID');
     this.sid = name;
-    if (this.onGround) return { rb: 'SID ' + name };
+    if (this.onGround) {
+      if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+        Approach.captureFlightPlan(this);
+      return { rb: 'SID ' + name };
+    }
     // em voo: reingressa na SID pelo fixo mais próximo
     const join = this.nearestOf(sid.route);
     this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
     this.nav = { mode: 'route', route: sid.route.slice(sid.route.indexOf(join)), idx: 0 };
+    if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+      Approach.captureFlightPlan(this);
     return { rb: 'SID ' + name + ', direto ' + join };
   }
   cmdStar(name) {
@@ -515,6 +543,8 @@ class Aircraft {
     this.star = name;
     this.via = false;
     this.nav = { mode: 'route', route: fixes.slice(fixes.indexOf(join)), idx: 0 };
+    if (typeof Approach !== 'undefined' && Approach.captureFlightPlan)
+      Approach.captureFlightPlan(this);
     return { rb: 'Chegada ' + name + ', direto ' + join };
   }
   // autorização de cruzamento da zona do aeródromo (helicópteros VFR)
@@ -710,16 +740,12 @@ class Aircraft {
   }
 
   cancelApproach() {
-    if (this.app.phase !== 'none') {
-      this.app = { phase: 'none', rwy: null };
-      this.landClr = false;
-    }
+    Approach.cancelProcedure(this);
   }
 
   goAround(reason) {
     const r = DATA.RUNWAYS[this.app.rwy] || DATA.RUNWAYS[this.rwy] || null;
-    this.app = { phase: 'none', rwy: null };
-    this.landClr = false;
+    Approach.cancelProcedure(this);
     this.goingAround = true;
     this.gaReason = reason;
     this.clrAlt = 4000;
@@ -813,6 +839,7 @@ class Aircraft {
     // ------- em voo -------
     this.checkPending(game);
     this.checkReports(game);
+    Approach.tickSight(this, game);
     if (this.kind === 'hel') this.updateHeli(dt, game);
 
     // Hover ATC: estacionário no ar (só heli); altitude ainda responde a A/SUBA/DESCA
@@ -938,7 +965,8 @@ class Aircraft {
         this.turnToward(r.hdg + corr, dt);
         if (!this.estabAnnounced && Math.abs(cross) < 0.2) {
           this.estabAnnounced = true;
-          game.radioPilot(this, `estabelecido no localizador ILS ${this.app.rwy}`);
+          const estab = Approach.establishedPhrase(this);
+          if (estab) game.radioPilot(this, estab);
         }
         // captura do glideslope
         if (this.app.phase === 'loc' && this.gsAlt() <= this.alt + 60 && dist < 18) this.app.phase = 'gs';

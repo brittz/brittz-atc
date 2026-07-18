@@ -102,6 +102,7 @@ const Separation = (() => {
     cfg,
     thresholds,
     isExempt,
+    findParallelGroup,
     rwyOf,
     stripOf,
     onApproach,

@@ -20,6 +20,7 @@ async function loadVersionInfo() {
     date: m[2],
     label: 'v' + m[1],
     fullLabel: 'Versão ' + m[1] + ' — ' + m[2],
+    markdown: text,
   };
 }
 
@@ -76,6 +77,27 @@ const game = {
     return Net.active
       ? (Net.airportState || { state: 'normal', label: 'Normal', active: [] })
       : (core ? core.airportState : { state: 'normal', label: 'Normal', active: [] });
+  },
+  get emergencyUnits() {
+    if (Net.active) return Net.emergencyUnits || [];
+    return (core && core.emergencyResponse && core.emergencyResponse.units) || [];
+  },
+  get runwayStates() {
+    if (Net.active) return Net.runwayStates || {};
+    return (core && core.runwayMgr && typeof RunwayState !== 'undefined')
+      ? RunwayState.serialize(core.runwayMgr) : {};
+  },
+  get emergencyResponse() {
+    if (Net.active) return Net.emergencyResponse || null;
+    return core ? core.emergencyResponse : null;
+  },
+  dispatchEmergency(ac, kind) {
+    if (Net.active) return { err: 'despacho via comando de rádio no multiplayer' };
+    return core ? core.dispatchEmergency(ac, kind) : { err: 'jogo não iniciado' };
+  },
+  endEmergencyResponse(ac, force) {
+    if (Net.active) return { err: 'encerramento via comando de rádio no multiplayer' };
+    return core ? core.endEmergencyResponse(ac, force) : { err: 'jogo não iniciado' };
   },
 
   clock() {
@@ -276,6 +298,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       date: '',
       label: 'v?',
       fullLabel: 'Versão indisponível',
+      markdown: '',
     };
     console.error('Falha ao carregar version.md:', e);
     UI.logSys('Não foi possível carregar version.md: ' + e.message, 'bad');

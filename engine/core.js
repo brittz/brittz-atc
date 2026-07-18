@@ -14,6 +14,10 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined') {
     globalThis.U = _d.U;
   }
   if (typeof Emergency === 'undefined') globalThis.Emergency = require('./emergency.js').Emergency;
+  if (typeof RunwayState === 'undefined') globalThis.RunwayState = require('./runway_state.js').RunwayState;
+  if (typeof EmergencyUnits === 'undefined') globalThis.EmergencyUnits = require('./emergency_units.js').EmergencyUnits;
+  if (typeof EmergencyResponse === 'undefined') globalThis.EmergencyResponse = require('./emergency_response.js').EmergencyResponse;
+  if (typeof EmergencyTraffic === 'undefined') globalThis.EmergencyTraffic = require('./emergency_traffic.js').EmergencyTraffic;
   if (typeof Aircraft === 'undefined') globalThis.Aircraft = require('./aircraft.js').Aircraft;
   if (typeof Commands === 'undefined') globalThis.Commands = require('./commands.js').Commands;
 }
@@ -44,6 +48,8 @@ class GameCore {
     this.recoveryUntil = 0;
     this.nextEmergencyRoll = U.rnd(90, 170);
     this.emergencyRunwayBlock = { until: 0, pair: null, reason: '' };
+    this.runwayMgr = RunwayState.create(this);
+    this.emergencyResponse = EmergencyResponse.create(this);
 
     // meteorologia dinâmica
     this.weather = null; this.atisIdx = 0; this.wxMin = 0; this.metarT = 0; this.windEvent = null;
@@ -268,33 +274,46 @@ class GameCore {
   }
 
   shouldHoldDeparture(rwy, except) {
+    if (typeof EmergencyTraffic !== 'undefined')
+      return EmergencyTraffic.shouldHoldDeparture(this, rwy, except);
+    // fallback legado (não deve ser usado com o módulo carregado)
     const pair = DATA.RWY_PAIR[rwy];
     if (this.emergencyRunwayBlock.until > this.time && this.emergencyRunwayBlock.pair === pair) return true;
-    return this.aircraft.some(a => a !== except &&
-      a.emergency && a.emergency.active &&
-      a.kind === 'arr' &&
-      a.state !== 'done' &&
-      (
-        ['high', 'critical'].includes(a.emergency.severity) ||
-        DATA.RWY_PAIR[(a.emergency.info && a.emergency.info.runway) || a.app.rwy || DATA.CONFIGS[this.cfg].arrRwy] === pair
-      ) &&
-      ['declared', 'identified', 'assessed', 'coordinating', 'vectoring', 'approach', 'landing', 'post-landing'].includes(a.emergency.stage));
+    if (this.runwayMgr && typeof RunwayState !== 'undefined' && RunwayState.isUnavailable(this.runwayMgr, rwy, this)) return true;
+    return false;
+  }
+
+  departureHoldReason(rwy, except) {
+    if (typeof EmergencyTraffic !== 'undefined')
+      return EmergencyTraffic.departureHoldReason(this, rwy, except);
+    return this.shouldHoldDeparture(rwy, except)
+      ? 'aguarde, prioridade para o tráfego em emergência'
+      : null;
+  }
+
+  emergencyTrafficSummary() {
+    if (typeof EmergencyTraffic === 'undefined') return {};
+    return EmergencyTraffic.runwaySummary(this);
   }
 
   startEmergency(ac, kind, opts) {
     if (!ac || ac.state === 'done') return null;
     ac.emergency = Emergency.create(kind, ac, this, opts || {});
     if (ac.pilotAi) ac.pilotAi.nextAt = this.time + U.rnd(18, 35);
+    EmergencyResponse.open(this.emergencyResponse, ac, this);
     this.syncAirportState();
     this.radioPilot(ac, Emergency.declareText(ac), 0.2);
     this.emit({ type: 'banner', text: 'EMERGÊNCIA: ' + ac.cs + ' — ' + ac.emergency.title, cls: 'bad' });
-    this.emit({ type: 'radio', who: 'sys', text: 'Estado operacional do aeroporto: EMERGÊNCIA. Priorize ' + ac.cs + ' e reorganize o fluxo.', cls: 'bad' });
+    this.emit({ type: 'radio', who: 'sys', text: 'Estado operacional do aeroporto: EMERGÊNCIA. Priorize ' + ac.cs + ' — operações em pistas independentes podem continuar.', cls: 'bad' });
     for (const other of this.aircraft) {
       if (other === ac || other.state === 'done') continue;
       if (other.airborne && other.kind === 'arr' && U.dist(0, 0, other.x, other.y) < 28 && other.app.phase === 'none')
         this.radioPilot(other, 'ciente prioridade para ' + ac.cs + ', podemos aceitar vetores ou espera', U.rnd(2, 6));
-      if (other.kind === 'dep' && ['taxi', 'holdshort', 'lineup'].includes(other.state))
-        this.radioPilot(other, 'mantendo posição, aguardando prioridade da emergência ' + ac.cs, U.rnd(2, 6));
+      if (other.kind === 'dep' && ['taxi', 'holdshort', 'lineup'].includes(other.state)) {
+        const hold = this.departureHoldReason(other.rwy || DATA.CONFIGS[this.cfg].depRwy, other);
+        if (hold)
+          this.radioPilot(other, 'mantendo posição, ' + hold.replace(/^aguarde,?\s*/i, ''), U.rnd(2, 6));
+      }
     }
     this.emit({ type: 'chime' });
     return ac.emergency;
@@ -309,6 +328,23 @@ class GameCore {
     this.recoveryUntil = Math.max(this.recoveryUntil, this.time + 150);
     this.syncAirportState();
     this.emit({ type: 'radio', who: 'sys', text: ac.cs + ': emergência encerrada. Aeroporto em recuperação.', cls: 'good' });
+  }
+
+  dispatchEmergency(ac, kind) {
+    if (!ac) return { err: 'sem aeronave' };
+    const map = {
+      FIRE: EmergencyResponse.dispatchFire,
+      AMBULANCE: EmergencyResponse.dispatchAmbulance,
+      MEDICAL: EmergencyResponse.dispatchMedical,
+      FULL: EmergencyResponse.dispatchFull,
+    };
+    const fn = map[kind];
+    if (!fn) return { err: 'tipo de despacho inválido' };
+    return fn(this.emergencyResponse, ac, this);
+  }
+
+  endEmergencyResponse(ac, force) {
+    return EmergencyResponse.tryEnd(this.emergencyResponse, ac, this, !!force);
   }
 
   maybeStartUnexpectedEmergency(dt) {
@@ -378,7 +414,8 @@ class GameCore {
     let text = null;
     let ask = null;
     if (ac.emergency && ac.emergency.active) {
-      text = Emergency.initiative(ac);
+      const assist = EmergencyResponse.maybePilotAssistance(this.emergencyResponse, ac, this);
+      text = (assist && assist.text) || Emergency.initiative(ac);
       ai.nextAt = this.time + U.rnd(50, 90);
     } else if (ai.pendingAsk && ai.standbyUntil && this.time >= ai.standbyUntil) {
       // atualização após espera longa
@@ -520,6 +557,7 @@ class GameCore {
   runwayOccupied(rwy, except) {
     const pair = DATA.RWY_PAIR[rwy];
     if (this.emergencyRunwayBlock.until > this.time && this.emergencyRunwayBlock.pair === pair) return true;
+    if (this.runwayMgr && RunwayState.isUnavailable(this.runwayMgr, rwy, this)) return true;
     return this.aircraft.some(a => a !== except && a.state !== 'done' &&
       ['lineup', 'takeoff', 'rollout', 'abort'].includes(a.state) && DATA.RWY_PAIR[a.rwy] === pair);
   }
@@ -538,20 +576,24 @@ class GameCore {
     if (ac.emergency && ac.emergency.active) {
       pts += 150;
       this.emit({ type: 'radio', who: 'sys', text: ac.cs + ' (emergência) pousou em segurança — bônus!', cls: 'good' });
+      const stuck = EmergencyResponse.cannotVacate(ac.emergency);
       const outcome = (ac.emergency.kind === 'engine-fire' || ac.emergency.kind === 'cockpit-smoke' || ac.emergency.kind === 'bomb-threat')
         ? 'evacuação'
         : 'pouso seguro';
       ac.emergency.outcome = outcome;
-      ac.emergency.resultNote = outcome === 'evacuação' ? 'equipes de emergência na pista' : 'inspeção após o pouso';
+      ac.emergency.resultNote = outcome === 'evacuação' || stuck
+        ? 'equipes de emergência na pista'
+        : 'inspeção após o pouso';
       ac.emergency.stage = 'post-landing';
-      ac.timer = outcome === 'evacuação' ? U.rnd(28, 40) : U.rnd(16, 24);
+      ac.timer = (outcome === 'evacuação' || stuck) ? U.rnd(28, 40) : U.rnd(16, 24);
       this.emergencyRunwayBlock = {
-        until: this.time + (outcome === 'evacuação' ? 85 : 35),
+        until: this.time + ((outcome === 'evacuação' || stuck) ? 85 : 35),
         pair: DATA.RWY_PAIR[ac.rwy],
         reason: outcome,
       };
+      EmergencyResponse.onTouchdown(this.emergencyResponse, ac, this);
       this.emit({ type: 'radio', who: 'sys',
-        text: outcome === 'evacuação'
+        text: (outcome === 'evacuação' || stuck)
           ? ac.cs + ': evacuação prevista, pista temporariamente interditada.'
           : ac.cs + ': equipes acompanhando o desembarque, mantenha a pista protegida.',
         cls: 'bad' });
@@ -577,10 +619,18 @@ class GameCore {
   onRunwayVacated(ac) {
     if (!ac || !ac.rwy) return;
     if (ac.emergency && ac.emergency.outcome) {
+      EmergencyResponse.onVacated(this.emergencyResponse, ac, this);
       const note = ac.emergency.outcome === 'evacuação'
         ? 'evacuação concluída e pista liberada'
         : 'aeronave liberou a pista';
-      this.finishEmergency(ac, ac.emergency.outcome, note);
+      // encerra via Response quando possível; senão fallback V2
+      const end = EmergencyResponse.tryEnd(this.emergencyResponse, ac, this, false);
+      if (end && end.err) {
+        // ainda em inspeção/equipes — agenda encerramento quando seguro
+        ac.emergency.flags = ac.emergency.flags || {};
+        ac.emergency.flags.pendingClose = true;
+        ac.emergency.resultNote = note;
+      }
     }
   }
 
@@ -707,7 +757,14 @@ class GameCore {
         ac.update(h, this);
         this.handleEmergencyState(ac);
         this.maybePilotInitiative(ac);
+        // encerra resposta pendente após inspeção/equipes
+        if (ac.emergency && ac.emergency.flags && ac.emergency.flags.pendingClose && ac.emergency.active) {
+          const end = EmergencyResponse.tryEnd(this.emergencyResponse, ac, this, false);
+          if (end && !end.err) ac.emergency.flags.pendingClose = false;
+        }
       }
+      if (this.runwayMgr) RunwayState.update(this.runwayMgr, this, h);
+      if (this.emergencyResponse) EmergencyResponse.update(this.emergencyResponse, this, h);
 
       // rádio pendente
       for (let i = this.pendingRadio.length - 1; i >= 0; i--) {
@@ -752,12 +809,20 @@ class GameCore {
       cfg: this.cfg,
       runwayUse: { ...this.runwayUse },
       airportState: { ...this.airportState },
+      runwayStates: RunwayState.serialize(this.runwayMgr),
+      emergencyUnits: EmergencyUnits.serialize(
+        this.emergencyResponse && this.emergencyResponse.units),
+      emergencyResponse: EmergencyResponse.serialize(this.emergencyResponse),
       aircraft: this.aircraft.map(a => ({
         cs: a.cs, radio: a.radio, type: a.type, kind: a.kind,
         x: a.x, y: a.y, alt: a.alt, spd: a.spd, hdg: a.hdg, vs: a.vs,
         clrAlt: a.clrAlt, clrSpd: a.clrSpd, spdMode: a.spdMode,
         state: a.state, nav: a.nav, app: a.app, landClr: a.landClr,
         star: a.star, sid: a.sid, dest: a.dest, rwy: a.rwy,
+        flightPlan: a.flightPlan ? {
+          type: a.flightPlan.type, name: a.flightPlan.name,
+          route: (a.flightPlan.route || []).slice(),
+        } : null,
         emergency: Emergency.serialize(a.emergency), via: a.via, stca: a.stca,
         goingAround: a.goingAround, timer: a.timer,
         vacateClr: !!a.vacateClr, vacateSide: a.vacateSide || null,
@@ -771,6 +836,7 @@ class GameCore {
         wptExit: a.wptExit, trail: a.trail,
         pending: (a.pending || []).map(p => ({ label: p.label })),
         reports: (a.reports || []).map(r => ({ label: r.label })),
+        airportInSight: !!a.airportInSight, sightRequested: !!a.sightRequested,
       })),
     };
   }
