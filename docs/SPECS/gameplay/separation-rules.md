@@ -83,6 +83,12 @@ Quando o aeroporto declara operações paralelas válidas, o motor **não** emit
 
 Aeronaves na **mesma** strip (mesmo `rwyPair`) continuam sujeitas à separação radar padrão.
 
+**Decolagem inicial:** a isenção de `simultaneousTakeoffs` vale enquanto ambos os deps
+estão airborne (> 400 ft) e o mais afastado do aeródromo ainda está dentro da bolha
+(~15 NM). Não se usa só um teto baixo de altitude: paralelas próximas (ex.: SBCV N/S
+~0.8 NM) permanecem dentro da separação radar na proa de pista após 3500 ft — um
+teto antigo gerava alarme/STCA falso em decolagens simultâneas válidas.
+
 ---
 
 # Alarmes e penalização

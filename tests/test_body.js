@@ -752,6 +752,62 @@ const sameStripBad = sepA.stca === 2 && sepCore.stats.sepLoss >= 1;
 console.log('SEPpar -> exempt?', parallelOk, '| same strip conflict?', sameStripBad);
 console.log(parallelOk && sameStripBad ? 'OK SEPARATION RULES (paralelas isentas, mesma strip conflita)' : 'FALHA SEPARATION');
 
+// ---------- decolagens simultâneas paralelas (SBCV N/S) — sem falso alarme ----------
+const stdCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+stdCore.setRunwayUse('09L', 'ambas');
+stdCore.setRunwayUse('09R', 'ambas');
+const stdSid = Object.keys(DATA.SIDS).filter(id => DATA.SIDS[id].cfg === '09');
+const stdA = new Aircraft({
+  cs: 'AZU9401', radio: 'Azul', type: 'A20N', kind: 'dep', state: 'holdshort',
+  x: -0.95, y: 0.58, alt: 0, spd: 0, hdg: 90, sid: stdSid[0],
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+stdA.rwy = '09L'; stdA.clrAlt = 5000;
+const stdB = new Aircraft({
+  cs: 'GLO9402', radio: 'Gol', type: 'B738', kind: 'dep', state: 'holdshort',
+  x: -0.95, y: -0.58, alt: 0, spd: 0, hdg: 90, sid: stdSid[1] || stdSid[0],
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+stdB.rwy = '09R'; stdB.clrAlt = 5000;
+stdCore.aircraft = [stdA, stdB];
+stdA.cmdTakeoff('09L', stdCore);
+stdB.cmdTakeoff('09R', stdCore);
+let stdT = 0, stdAlarm = false, stdPast3500 = false;
+while (stdT < 180) {
+  stdCore.tick(0.5);
+  stdT += 0.5;
+  if (stdA.alt >= 3500 || stdB.alt >= 3500) stdPast3500 = true;
+  if ((stdA.stca || 0) >= 2 || (stdB.stca || 0) >= 2 || stdCore.stats.sepLoss > 0) {
+    stdAlarm = true;
+    break;
+  }
+}
+// mesma faixa: ainda deve conflitar acima de 400 ft
+const stdSame = new Aircraft({
+  cs: 'TAM9403', radio: 'LATAM', type: 'A320', kind: 'dep',
+  x: 2.0, y: 0.42, alt: 1200, spd: 180, hdg: 90, rwy: '09L',
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+stdSame.rwy = '09L'; stdSame.state = 'air';
+const stdNear = new Aircraft({
+  cs: 'AZU9404', radio: 'Azul', type: 'A20N', kind: 'dep',
+  x: 2.5, y: 0.38, alt: 1100, spd: 180, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+stdNear.rwy = '09L'; stdNear.state = 'air';
+stdCore.aircraft = [stdSame, stdNear];
+stdCore.stats.sepLoss = 0; stdCore.sepPairs.clear();
+stdCore.checkConflicts(1);
+const stdSameBad = stdSame.stca === 2 && stdCore.stats.sepLoss >= 1;
+console.log('SEPdep -> past3500?', stdPast3500, '| noAlarm?', !stdAlarm, '| sameStrip?', stdSameBad,
+  '| sepLoss', stdCore.stats.sepLoss);
+console.log(stdPast3500 && !stdAlarm && stdSameBad
+  ? 'OK SEPARATION DEPARTURES (paralelas sem alarme, mesma strip conflita)'
+  : 'FALHA SEPARATION DEPARTURES ' + JSON.stringify({
+    stdPast3500, stdAlarm, stdSameBad, sepLoss: stdCore.stats.sepLoss,
+    altA: Math.round(stdA.alt), altB: Math.round(stdB.alt),
+  }));
+
 // ---------- hover (helicóptero) ----------
 const hvCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
 const hvH = new Aircraft({

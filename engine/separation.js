@@ -43,9 +43,24 @@ const Separation = (() => {
     return !!(ac && ac.app && (ac.app.phase === 'loc' || ac.app.phase === 'gs'));
   }
 
-  // decolagem recente: saída ainda baixa, usando a pista de decolagem
+  // Distância ao aeródromo (NM) para considerar decolagem ainda "inicial"
+  const DEPARTURE_BUBBLE_NM = 15;
+
+  function distField(ac) {
+    if (!ac) return Infinity;
+    if (typeof U !== 'undefined' && U.dist) return U.dist(0, 0, ac.x, ac.y);
+    return Math.hypot(ac.x || 0, ac.y || 0);
+  }
+
+  /**
+   * Decolagem inicial: saída airborne ainda na bolha do aeródromo.
+   * Não usar só teto de altitude — pistas paralelas (ex.: SBCV N/S ~0.8 NM)
+   * permanecem próximas na proa de pista após 3500 ft; um teto baixo gerava
+   * STCA/alarme falso em decolagens simultâneas autorizadas.
+   */
   function departing(ac) {
-    return !!(ac && ac.kind === 'dep' && ac.airborne && ac.rwy && ac.alt < 3500 && ac.alt > 400);
+    return !!(ac && ac.kind === 'dep' && ac.airborne && ac.rwy
+      && ac.alt > 400 && distField(ac) < DEPARTURE_BUBBLE_NM);
   }
 
   function arriving(ac) {
@@ -74,8 +89,11 @@ const Separation = (() => {
     if (g.independentApproaches && onApproach(a) && onApproach(b) && rA !== rB)
       return true;
 
-    // Decolagens simultâneas
-    if (g.simultaneousTakeoffs && departing(a) && departing(b) && rA !== rB)
+    // Decolagens simultâneas: ambos deps em faixas distintas, ainda na bolha
+    // (usa max distância para não perder a isenção quando um sai ~1 s antes)
+    if (g.simultaneousTakeoffs && a.kind === 'dep' && b.kind === 'dep' && rA !== rB
+      && a.airborne && b.airborne && a.alt > 400 && b.alt > 400
+      && Math.max(distField(a), distField(b)) < DEPARTURE_BUBBLE_NM)
       return true;
 
     // Pouso (aproximação) numa + decolagem na paralela
@@ -98,6 +116,7 @@ const Separation = (() => {
 
   return {
     DEFAULTS,
+    DEPARTURE_BUBBLE_NM,
     normalize,
     cfg,
     thresholds,
@@ -109,6 +128,7 @@ const Separation = (() => {
     establishedIls,
     departing,
     arriving,
+    distField,
   };
 })();
 
