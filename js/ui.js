@@ -519,6 +519,9 @@ const UI = (() => {
     $('statDeparted').textContent = game.stats.departed;
     $('statGA').textContent = game.stats.goarounds;
     $('statSep').textContent = game.stats.sepLoss;
+    $('appVersion').textContent = game.versionInfo && game.versionInfo.label ? game.versionInfo.label : 'v—';
+    $('appVersion').title = game.versionInfo && game.versionInfo.fullLabel ? game.versionInfo.fullLabel : 'Versão —';
+    $('versionLine').textContent = game.versionInfo && game.versionInfo.fullLabel ? game.versionInfo.fullLabel : 'Versão —';
   }
 
   function flashBanner(text, cls) {

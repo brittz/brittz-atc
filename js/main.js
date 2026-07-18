@@ -9,6 +9,20 @@
 let core = null;             // instância de GameCore da partida atual
 let airportJson = null;      // JSON do aeroporto carregado (p/ criar o core)
 
+async function loadVersionInfo() {
+  const res = await fetch('version.md', { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' ao carregar version.md');
+  const text = await res.text();
+  const m = text.match(/^## \[([^\]]+)\] — (\d{4}-\d{2}-\d{2})$/m);
+  if (!m) throw new Error('version.md sem cabeçalho de versão válido');
+  return {
+    number: m[1],
+    date: m[2],
+    label: 'v' + m[1],
+    fullLabel: 'Versão ' + m[1] + ' — ' + m[2],
+  };
+}
+
 // traduz os eventos do core em efeitos de UI (o que antes eram chamadas UI.* diretas)
 function handleEmit(ev) {
   switch (ev.type) {
@@ -41,6 +55,7 @@ const game = {
   paused: false,
   settings: { sound: true, tts: true, sweep: true, fixNames: true, trailLine: false },
   airportJson: null,
+  versionInfo: { number: '—', date: '', label: 'v—', fullLabel: 'Versão —' },
 
   // velocidade de simulação: no multiplayer o tempo é do servidor
   get simSpeed() { return this._simSpeed; },
@@ -226,6 +241,19 @@ window.addEventListener('DOMContentLoaded', async () => {
   const cv = document.getElementById('radar');
   Radar.init(cv, game);
   UI.init(game);
+  try {
+    game.versionInfo = await loadVersionInfo();
+  } catch (e) {
+    game.versionInfo = {
+      number: 'indisponível',
+      date: '',
+      label: 'v?',
+      fullLabel: 'Versão indisponível',
+    };
+    console.error('Falha ao carregar version.md:', e);
+    UI.logSys('Não foi possível carregar version.md: ' + e.message, 'bad');
+  }
+  UI.refreshTop();
 
   // recorde local (localStorage)
   const rec = game.record();

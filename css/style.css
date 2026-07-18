@@ -62,6 +62,7 @@ button.primary:hover { background: #1a5a42; }
 #topbar .score span { color: var(--sel); font-size: 15px; }
 #topbar .score small { color: var(--dim); margin-left: 4px; }
 #topbar .small { font-size: 11px; }
+#topbar .version { font-size: 11px; }
 #topbar .spacer { flex: 1; }
 #speedBtns button { border-radius: 0; margin-left: -1px; }
 
@@ -280,14 +281,15 @@ button.primary:hover { background: #1a5a42; }
 #chartList button.dim { opacity: 0.45; }
 #chartCanvas { flex: 1; height: 100%; border-radius: 3px; }
 
-.modalBox.help { width: 720px; }
+.modalBox.help { width: 920px; max-width: 94vw; }
 .modalBox.help h2 { color: var(--good); margin-bottom: 10px; }
 .modalBox.help h3 { color: var(--arr); margin: 14px 0 6px; font-size: 13px; }
 .modalBox.help p, .modalBox.help li { line-height: 1.5; margin-bottom: 6px; }
 .modalBox.help ul { padding-left: 20px; }
-.modalBox.help table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-.modalBox.help td { border: 1px solid var(--line); padding: 4px 8px; }
-.modalBox.help td:first-child { white-space: nowrap; }
+.modalBox.help table { border-collapse: collapse; width: 100%; margin: 8px 0; table-layout: fixed; }
+.modalBox.help td { border: 1px solid var(--line); padding: 6px 9px; vertical-align: top; }
+.modalBox.help td:first-child { width: 31%; white-space: normal; }
+.modalBox.help td:last-child { width: 69%; }
 .modalBox.help code { color: var(--sel); background: #06121a; padding: 1px 5px; border-radius: 3px; }
 
 /* ===== configurações ===== */
@@ -318,6 +320,8 @@ button.primary:hover { background: #1a5a42; }
 @media (max-width: 980px) {
   #topbar { flex-wrap: wrap; gap: 6px 10px; padding: 5px 8px; }
   #topbar .small, #topbar .score small { display: none; }
+  .modalBox.help { width: 94vw; }
+  .modalBox.help td:first-child { width: 36%; }
   #sidebar {
     position: absolute; right: 0; top: 0; bottom: 0; z-index: 25;
     width: min(340px, 86vw);
