@@ -19,6 +19,14 @@ passos, requisitos e pendências: **leia `docs/PLANO-ONLINE.md` §8 antes de tud
    O motor não pode ganhar conhecimento hardcoded de aeroporto/carta.
 6. **Sem custos ocultos**: voz = Web Speech API local; nenhuma API paga sem o usuário
    pedir explicitamente.
+7. **Versionamento em RC:** enquanto o topo de `version.md` for `## [X.Y.Z-rc]`, toda
+   feature/fix desta leva vai **acumulando** nesse bloco (não abrir versão nova nem
+   fechar sozinho). Só promover para `## [X.Y.Z]` e commitar quando o usuário pedir
+   explicitamente para **fechar a versão** / commit. O app lê o cabeçalho do topo
+   (`js/main.js` → `loadVersionInfo`).
+8. **Menu de ajuda obrigatório:** qualquer mudança que adicione, renomeie, altere a
+   sintaxe ou o significado de comandos deve atualizar o modal de ajuda em
+   `index.html` (tabela + `cmdHint` quando couber) na mesma alteração.
 
 ## Mapa do código
 

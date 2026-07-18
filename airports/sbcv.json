@@ -31,6 +31,21 @@
   },
   "rwyPair": { "09L": "N", "27R": "N", "09R": "S", "27L": "S" },
 
+  "separation": {
+    "radarNm": 3,
+    "radarFt": 1000,
+    "predictNm": 3.2,
+    "parallelOps": [
+      {
+        "id": "NS",
+        "strips": ["N", "S"],
+        "independentApproaches": true,
+        "simultaneousTakeoffs": true,
+        "mixedArrivalDeparture": true
+      }
+    ]
+  },
+
   "stars": {
     "SABIA1": { "cfg": "09", "entry": "SABIA", "name": "SABIA 1 (chegada NW)", "route": [
       { "fix": "SABIA", "alt": 16000, "spd": 290 },

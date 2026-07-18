@@ -44,7 +44,7 @@ comando (callsign completo ou só o final, ex. `3412`):
 | `A 6000` / `A FL120` | altitude / nível de voo |
 | `V 220` / `V LIVRE` | velocidade (≤250 kt abaixo de 10.000 ft) |
 | `P 270` · `PE 180` · `PD 360` | proa (PE/PD força o lado da curva) |
-| `DIR GOMES` | direto ao fixo (retoma a carta se o fixo pertencer a ela) |
+| `DCT GOMES` | direto ao fixo (retoma a carta se o fixo pertencer a ela; alias `DIR`) |
 | `VIA` | descer via STAR cumprindo as restrições da carta |
 | `ILS 09L` | autoriza aproximação ILS |
 | `AP` | autoriza pouso (obrigatório antes de 1 NM final) |
@@ -60,7 +60,7 @@ O botão **ATIS** mostra o METAR dinâmico e permite trocar as pistas em uso qua
 Sons e voz dos pilotos usam a Web Speech API do navegador (100% local, sem custo).
 
 **Toque (tablet/celular):** pinça = zoom, arrastar = mover, toque = selecionar; com uma aeronave
-selecionada, toque num fixo (monta `DIR`) ou numa cabeceira (monta `ILS`/`AP`/`DEC`) e confirme
+selecionada, toque num fixo (monta `DCT`) ou numa cabeceira (monta `ILS`/`AP`/`DEC`) e confirme
 no botão 📡. O painel de strips abre/fecha pelo botão **📋 Strips**.
 
 ## Aeroportos (fases)
@@ -75,6 +75,10 @@ nenhum aeroporto — só lê essa estrutura, então **adicionar uma fase nova = 
   "fixes":   { "GOMES": [-13, 0] },              // NM a partir do aeroporto (+x leste, +y norte)
   "runways": { "09L": { "thr": [-0.95, 0.4], "hdg": 90, "len": 1.9, "opp": "27R" } },
   "rwyPair": { "09L": "N", "27R": "N" },          // pistas que compartilham o mesmo asfalto
+  "separation": {                                 // regras de conflito (paralelas, etc.)
+    "radarNm": 3, "radarFt": 1000,
+    "parallelOps": [{ "strips": ["N", "S"], "independentApproaches": true }]
+  },
   "stars":   { "SABIA1": { "cfg": "09", "entry": "SABIA", "name": "...", "route": [
                  { "fix": "GOMES", "alt": 4000, "spd": 200 } ] } },
   "sids":    { "ARENA1": { "cfg": "09", "exit": "ARENA", "name": "...", "route": ["VOLTA"] } },

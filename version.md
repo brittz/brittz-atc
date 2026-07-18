@@ -2,6 +2,58 @@
 
 > Histórico consolidado retroativamente a partir de todos os commits do repositório.
 > As versões abaixo agrupam os commits por marco funcional, com a versão mais recente no topo.
+>
+> **Release candidate:** enquanto o cabeçalho for `X.Y.Z-rc`, as mudanças acumulam neste
+> bloco. Só vira versão fechada (`X.Y.Z`) quando o usuário pedir para fechar/commitar.
+
+## [0.8.0] — 2026-07-18
+
+### Padronização DCT
+- A interface passou a apresentar **DCT** (Direct) como abreviação oficial para direto ao fixo
+- `DIR` continua aceito como alias de compatibilidade; linguagem natural (`DIRECT`, `DIRETO`, `prossiga direto`, etc.) segue produzindo a mesma instrução interna (`cmdDirect`)
+- Ajuda, dica de comando e clique/toque em fixo no radar montam `DCT` em vez de `DIR`
+
+### Livrar a pista (runway vacating)
+- Novo comando `LIVRAR` / fraseologia ICAO (`LIVRE A PISTA`, `VACATE RUNWAY`, lados e “quando possível”)
+- Após pouso ou RTO a aeronave permanece na pista até autorização; alinhada também pode livrar com o mesmo comando
+- Atalhos contextuais no painel quando a aeronave ocupa a pista; domínio TWR no multiplayer
+- Menu de ajuda atualizado com `LIVRAR` / `VACATE` e o novo fluxo pós-pouso/RTO
+
+### Aguarde e informações ATC (standby)
+- Comandos `AGUARDE` / `STANDBY` (tráfego, emergência, instruções) e `PREVISAO` / `EXPECT` (aproximação, pouso, decolagem, autorização)
+- Atalhos contextuais só quando o piloto tem solicitação pendente; a IA respeita a espera e só pede atualização depois
+- Emergências deixam de repetir MAYDAY no rádio após a declaração; contato ATC marca reconhecimento
+- Menu de ajuda atualizado com `AGUARDE` / `STANDBY` e `PREVISAO` / `EXPECT`
+
+### Readback e erros do piloto
+- Recusas passam a distinguir **erro de entrada** (fixo/SID/STAR/pista/valor inexistente → mensagem diagnóstica) de **erro operacional** (fase/tipo/performance → fraseologia de piloto)
+- Mecanismo único `PilotReply` (`errKind: input|ops`) usado por HOLD, DCT, SID, STAR, ILS e demais comandos
+- Menu de ajuda atualizado com o comportamento das negativas
+
+### Fraseologia radiotelefônica (callsigns)
+- No rádio/TTS, voos comerciais usam o designativo da empresa + números individuais (`GLO1234` → “Gol Um Dois Três Quatro”), sem soletrar o prefixo em ICAO
+- Matrículas e letras sem operador conhecido usam o alfabeto fonético ICAO (`PT-ABC` → Papa Tango…)
+- Módulo `engine/radio_phrase.js`; strips/parser/engine mantêm o ID textual; menu de ajuda atualizado
+
+### Regras de separação
+- Separação radar passa a consultar regras do aeroporto (`separation` no JSON) via `engine/separation.js`
+- Operações paralelas válidas (aproximações independentes, decolagens simultâneas, pouso+decolagem) não geram STCA, alarme nem perda de pontos
+- SBCV declara strips N/S com operações paralelas independentes; a engine permanece genérica
+- Menu de ajuda atualizado
+
+### Hover (helicópteros)
+- Novo estado de voo pairado sob instrução ATC (`HOVER`), exclusivo de helicópteros e independente de `ESPERA`/HOLD
+- Parser aceita pt/en (`Mantenha posição`, `Permaneça pairado`, `Hold position`, `Maintain hover`, …); atalho contextual **Hover** / **Prosseguir**
+- Qualquer autorização de navegação (`DCT`, `P`, `CRZ`, `PROSSEGUIR`, …) encerra o hover; altitude ainda pode ser ajustada enquanto pairado
+- Snapshot MP inclui `hovering` / `hoverPos` / `hoverHdg`; ajuda e contrato atualizados
+
+### Holding Pattern (racetrack)
+- `HOLD`/`ESPERA` passa de órbita circular para circuito racetrack (pernas + curvas de 180°), módulo `engine/holding.js`
+- Curvas à direita (padrão) ou esquerda; entrada Direct na v1 (parallel/teardrop previstos na arquitetura)
+- Aliases pt/en (`Aguarde sobre…`, `Entre em espera…`, `Hold over…`); radar desenha o hipódromo alinhado ao procedimento
+- Vetores/`DCT`/`VIA`/`ILS`/etc. encerram a espera; altitude/velocidade podem ser ajustadas durante o circuito
+
+---
 
 ## [0.7.0] — 2026-07-17
 

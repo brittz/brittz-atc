@@ -39,7 +39,8 @@ const DATA = {
 
   // ---------- espaço aéreo ativo (preenchido por setAirport) ----------
   FIXES: {}, RUNWAYS: {}, RWY_PAIR: {}, STARS: {}, SIDS: {}, DESTS: {},
-  CONFIGS: {}, AIRPORT: { icao: '----', name: '', elev: 0, range: 60, gsSlopeFtNm: 318 },
+  CONFIGS: {}, SEPARATION: null,
+  AIRPORT: { icao: '----', name: '', elev: 0, range: 60, gsSlopeFtNm: 318 },
 
   setAirport(j) {
     this.FIXES = j.fixes;
@@ -55,6 +56,10 @@ const DATA = {
       defaultCfg: j.defaultCfg ?? Object.keys(j.configs)[0],
     };
     if (j.airlines) this.AIRLINES = j.airlines;
+    const sepNorm = (typeof Separation !== 'undefined' && Separation.normalize)
+      ? Separation.normalize(j.separation)
+      : Object.assign({ radarNm: 3, radarFt: 1000, predictNm: 3.2, parallelOps: [] }, j.separation || {});
+    this.SEPARATION = sepNorm;
   },
 
   async loadAirport(url) {

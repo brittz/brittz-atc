@@ -34,7 +34,7 @@ const Radar = (() => {
 
   // ---------------- interação ----------------
   // tap/clique: seleciona aeronave; com aeronave selecionada, tocar num fixo
-  // monta "DIR fixo" e tocar numa cabeceira monta "ILS"/"DEC" (confirmar depois)
+  // monta "DCT fixo" e tocar numa cabeceira monta "ILS"/"DEC" (confirmar depois)
   function handleTap(px, py) {
     let best = null, bestD = 20;
     for (const a of game.aircraft) {
@@ -67,7 +67,7 @@ const Radar = (() => {
         const d = Math.hypot(sx - px, sy - py);
         if (d < bfD) { bfD = d; bf = name; }
       }
-      if (bf && sel.airborne) { UI.propose(sel.cs + ' DIR ' + bf); return; }
+      if (bf && sel.airborne) { UI.propose(sel.cs + ' DCT ' + bf); return; }
       // espaço vazio: propõe vetor (proa da aeronave até o ponto tocado)
       if (sel.airborne) {
         const [wx, wy] = toWorld(px, py);
@@ -307,10 +307,28 @@ const Radar = (() => {
       }
       ctx.stroke();
     } else if (a.nav.mode === 'hold') {
-      const f = U.fix(a.nav.fix);
-      const [sx, sy] = toScreen(f[0], f[1]);
+      const pts = (typeof Holding !== 'undefined' && Holding.pathPoints)
+        ? Holding.pathPoints(a.nav, a.spd)
+        : [];
       ctx.strokeStyle = C.hold;
-      ctx.beginPath(); ctx.arc(sx, sy, 2.2 * scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([4, 3]);
+      if (pts.length > 1) {
+        ctx.beginPath();
+        let [sx, sy] = toScreen(pts[0][0], pts[0][1]);
+        ctx.moveTo(sx, sy);
+        for (let i = 1; i < pts.length; i++) {
+          [sx, sy] = toScreen(pts[i][0], pts[i][1]);
+          ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+      } else {
+        const f = U.fix(a.nav.fix);
+        if (f) {
+          const [sx, sy] = toScreen(f[0], f[1]);
+          ctx.beginPath(); ctx.arc(sx, sy, 2.2 * scale, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+      ctx.setLineDash([]);
     }
     // localizador da aproximação autorizada
     if (a.app.phase !== 'none') {
@@ -394,6 +412,7 @@ const Radar = (() => {
       l3 = { inbound: a.crossRequested ? 'PEDE CRZ' : 'VFR', waiting: 'AGUARDA CRZ',
              crossing: 'CRUZANDO', clear: 'DEIXANDO' }[a.heliState] || l3;
       if (!a.heliAuto) l3 = 'VETOR';
+      if (a.hovering) l3 = 'HOVER';
     }
     if (a.state === 'holdshort') l3 = 'PRONTO ' + a.rwy;
     if (a.state === 'lineup') l3 = 'ALINHADO ' + a.rwy;

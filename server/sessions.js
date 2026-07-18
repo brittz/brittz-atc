@@ -15,6 +15,7 @@ const TWR_CMDS = new Set([
   'DEC', 'TO', 'CTO', 'DECOLAR', 'TAKEOFF', 'TKFF', 'TKOF',
   'AP', 'POUSO', 'CTL',
   'ABORTAR', 'ABT', 'RTO', 'REJECT',
+  'LIVRAR', 'VACATE',
   'TAXI', 'TAXIAR',
   'CRZ', 'CRUZAR', 'CROSS', 'CRUZAMENTO',
   'ARR', 'GA', 'ARREMETER',
@@ -172,7 +173,8 @@ class Session {
     switch (ev.type) {
       case 'radio': {
         const cs = ev.cs !== undefined ? ev.cs : (ev.ac ? ev.ac.cs : undefined);
-        this.broadcast({ t: 'radio', who: ev.who, cs, text: ev.text, cls: ev.cls });
+        const radio = ev.radio !== undefined ? ev.radio : (ev.ac ? ev.ac.radio : undefined);
+        this.broadcast({ t: 'radio', who: ev.who, cs, radio, text: ev.text, cls: ev.cls });
         break;
       }
       case 'score': {

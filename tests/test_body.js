@@ -184,6 +184,10 @@ let t5 = 0;
 while (t5 < 60 && v4.spd < 80) { v4.update(0.5, game); t5 += 0.5; } // acelera ate ~80kt
 const rAb = Commands.parse('GLO7004 ABORTAR', game);
 console.log('RTO     ->', rAb.err || rAb.atcText, '| rb:', JSON.stringify(rAb.results.map(r=>r.rb||r.err)));
+while (t5 < 200 && v4.spd > 20) { v4.update(0.5, game); t5 += 0.5; } // freia na pista
+console.log(v4.state === 'abort' && !v4.vacateClr ? 'OK RTO AGUARDA LIVRAR (parado na pista)' : 'FALHA RTO aguardando state=' + v4.state + ' vacateClr=' + v4.vacateClr);
+const rVac = Commands.parse('GLO7004 LIVRAR', game);
+console.log('LIVRAR  ->', rVac.err || rVac.atcText, '| rb:', JSON.stringify(rVac.results.map(r=>r.rb||r.err)));
 while (t5 < 400 && v4.state !== 'holdshort') { v4.update(0.5, game); t5 += 0.5; }
 console.log(v4.state === 'holdshort' && v4.rwy === '09R' ? 'OK RTO (parou e voltou ao ponto de espera)' : 'FALHA RTO state=' + v4.state);
 // tarde demais (acima de V1)
@@ -191,6 +195,31 @@ const v5 = mkDep('GLO7005', 'CACTO1');
 Commands.parse('GLO7005 DEC 09R', game);
 let t6 = 0; while (t6 < 120 && v5.state === 'takeoff') { v5.update(0.5, game); t6 += 0.5; if (v5.spd > v5.perf.vr - 5) break; }
 console.log('RTOv1   ->', JSON.stringify(v5.cmdAbort()), '(esperado erro acima de V1)');
+
+// ---------- LIVRAR: fraseologia pt/en e rollout ----------
+const vLine = mkDep('GLO7090', 'CACTO1');
+Commands.parse('GLO7090 ALINHAR 09R', game);
+const rLivLine = Commands.parse('GLO7090 LIVRE A PISTA PELA PROXIMA', game);
+console.log('LIVline ->', rLivLine.err || rLivLine.atcText, '| rb:', JSON.stringify(rLivLine.results.map(r=>r.rb||r.err)), '| state:', vLine.state);
+console.log(vLine.state === 'taxi' && !rLivLine.err ? 'OK LIVRAR ALINHADA (pt)' : 'FALHA LIVRAR ALINHADA');
+
+const vRoll = new Aircraft({
+  cs: 'TAM7091', radio: 'LATAM', type: 'A320', kind: 'arr',
+  state: 'rollout', rwy: '09L', spd: 40, alt: 0, hdg: 90,
+  x: DATA.RUNWAYS['09L'].thr[0], y: DATA.RUNWAYS['09L'].thr[1],
+  timer: 6, vacateClr: false,
+});
+game.aircraft.push(vRoll);
+game.onRunwayVacated = ac => events.push('VACATED ' + ac.cs);
+let tRoll = 0;
+while (tRoll < 30 && vRoll.spd > 25) { vRoll.update(0.5, game); tRoll += 0.5; }
+const stillWaiting = vRoll.state === 'rollout' && !vRoll.vacateClr;
+const rVacEn = Commands.parse('TAM7091 VACATE RUNWAY LEFT', game);
+console.log('LIVroll ->', rVacEn.err || rVacEn.atcText, '| waiting?', stillWaiting, '| vacateClr:', vRoll.vacateClr);
+while (tRoll < 80 && vRoll.state !== 'done') { vRoll.update(0.5, game); tRoll += 0.5; }
+console.log(stillWaiting && vRoll.state === 'done' && events.some(e => e === 'VACATED TAM7091')
+  ? 'OK LIVRAR ROLLOUT (en, aguardou autorização)'
+  : 'FALHA LIVRAR ROLLOUT state=' + vRoll.state);
 
 // ---------- TAXI para outra cabeceira ----------
 const v6 = mkDep('GLO7006', 'CACTO1');
@@ -533,6 +562,180 @@ console.log('AIpilot ->', aiTexts);
 console.log(/descida|aproximação/.test(aiTexts) && /transferência ao Centro/.test(aiTexts)
   ? 'OK IA PILOTOS (iniciativa fora das emergências)'
   : 'FALHA IA PILOTOS');
+
+// ---------- standby / previsão ATC ----------
+const sbAc = new Aircraft({
+  cs: 'AZU9100', radio: 'Azul', type: 'A20N', kind: 'arr',
+  x: -10, y: 5, alt: 8000, spd: 220, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+  pilotAi: { nextAt: 0, pendingAsk: 'vectors', standbyUntil: 0 },
+});
+aiCore.aircraft.push(sbAc);
+aiCore.time = 1000;
+const rSb = Commands.parse('AZU9100 STAND BY DUE TRAFFIC', aiCore);
+console.log('SBcmd  ->', rSb.err || rSb.atcText, '| rb:', JSON.stringify(rSb.results.map(r => r.rb || r.err)));
+const sbOk = !rSb.err && sbAc.pilotAi.standbyUntil > aiCore.time && /tráfego|trafego/i.test((rSb.results[0] && rSb.results[0].rb) || '');
+aiCore.maybePilotInitiative(sbAc);
+const sbSilent = aiCore.pendingRadio.filter(m => m.ac === sbAc).length === 0;
+const rExp = Commands.parse('AZU9100 EXPECT APPROACH', aiCore);
+const expOk = !rExp.err && /aproximação em breve/i.test(rExp.atcText || '');
+console.log(sbOk && sbSilent && expOk ? 'OK STANDBY/PREVISAO (pt-en, IA silenciada)' : 'FALHA STANDBY ' + JSON.stringify({ sbOk, sbSilent, expOk, atc: rSb.atcText }));
+
+// MAYDAY não repete após declaração
+const mayAc = new Aircraft({
+  cs: 'TAM9101', radio: 'LATAM', type: 'A320', kind: 'arr',
+  x: 0, y: -20, alt: 7000, spd: 210, hdg: 0,
+  nav: { mode: 'hdg', hdg: 0, turn: null },
+  pilotAi: { nextAt: 0 },
+});
+aiCore.aircraft.push(mayAc);
+aiCore.startEmergency(mayAc, 'engine-failure', { severity: 'high' });
+mayAc.pilotAi.nextAt = 0;
+aiCore.time += 40;
+aiCore.pendingRadio = [];
+aiCore.maybePilotInitiative(mayAc);
+const mayTexts = aiCore.pendingRadio.map(m => m.text).join(' | ');
+const noMaydayRepeat = !/MAYDAY MAYDAY MAYDAY/i.test(mayTexts) && !/repetindo/i.test(mayTexts);
+console.log('MAYini ->', mayTexts || '(silêncio)');
+console.log(noMaydayRepeat ? 'OK EMERG SEM MAYDAY REDUNDANTE' : 'FALHA MAYDAY REDUNDANTE');
+
+// ---------- readback: input vs operacional ----------
+const rbCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+rbCore.pendingRadio = [];
+const rbArr = new Aircraft({
+  cs: 'TAM9200', radio: 'LATAM', type: 'A320', kind: 'arr',
+  x: -5, y: 10, alt: 6000, spd: 210, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+rbCore.aircraft.push(rbArr);
+rbCore.runCommand('TAM9200 HOLD ABCXYZ');
+const rbInput = rbCore.pendingRadio.map(m => m.text).join(' | ');
+rbCore.pendingRadio = [];
+rbCore.runCommand('TAM9200 DEC 09R');
+const rbOps = rbCore.pendingRadio.map(m => m.text).join(' | ');
+console.log('RBin   ->', rbInput);
+console.log('RBops  ->', rbOps);
+console.log(/Negativo\. Fixo ABCXYZ não encontrado/i.test(rbInput) && /já estamos em voo|impossível na fase/i.test(rbOps)
+  ? 'OK READBACK INPUT/OPS'
+  : 'FALHA READBACK ' + JSON.stringify({ rbInput, rbOps }));
+
+// ---------- fraseologia radiotelefônica (callsigns) ----------
+const rp1 = RadioPhrase.speakCallsign('GLO1234', { lang: 'pt' });
+const rp2 = RadioPhrase.speakCallsign('AZU4512', { lang: 'en' });
+const rp3 = RadioPhrase.speakCallsign('PT-ABC', { lang: 'en' });
+const rp4 = RadioPhrase.speakCallsign('TAM3271', { radio: 'LATAM', lang: 'pt' });
+console.log('RPcs   ->', rp1, '|', rp2, '|', rp3, '|', rp4);
+console.log(
+  rp1 === 'Gol Um Dois Três Quatro' &&
+  rp2 === 'Azul Four Five One Two' &&
+  rp3 === 'Papa Tango Alpha Bravo Charlie' &&
+  rp4 === 'LATAM Três Dois Sete Um' &&
+  !/Golf Lima Oscar/i.test(rp1)
+    ? 'OK RADIO PHRASE CALLSIGN'
+    : 'FALHA RADIO PHRASE ' + JSON.stringify({ rp1, rp2, rp3, rp4 })
+);
+
+// ---------- regras de separação (paralelas do aeroporto) ----------
+const sepCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+const sepA = new Aircraft({
+  cs: 'AZU9301', radio: 'Azul', type: 'A20N', kind: 'arr',
+  x: -8, y: 0.35, alt: 2000, spd: 160, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+sepA.app = { phase: 'gs', rwy: '09L' }; sepA.landClr = true;
+const sepB = new Aircraft({
+  cs: 'GLO9302', radio: 'Gol', type: 'B738', kind: 'arr',
+  x: -7.5, y: -0.35, alt: 2100, spd: 160, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+sepB.app = { phase: 'gs', rwy: '09R' }; sepB.landClr = true;
+sepCore.aircraft = [sepA, sepB];
+sepCore.checkConflicts(1);
+const parallelOk = sepA.stca === 0 && sepB.stca === 0 && sepCore.stats.sepLoss === 0
+  && Separation.isExempt(sepA, sepB);
+// mesma pista / mesmo strip: deve conflitar
+const sepC = new Aircraft({
+  cs: 'TAM9303', radio: 'LATAM', type: 'A320', kind: 'arr',
+  x: -7.2, y: 0.38, alt: 2050, spd: 160, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+sepC.app = { phase: 'gs', rwy: '09L' };
+sepCore.aircraft = [sepA, sepC];
+sepCore.stats.sepLoss = 0; sepCore.sepPairs.clear();
+sepCore.checkConflicts(1);
+const sameStripBad = sepA.stca === 2 && sepCore.stats.sepLoss >= 1;
+console.log('SEPpar -> exempt?', parallelOk, '| same strip conflict?', sameStripBad);
+console.log(parallelOk && sameStripBad ? 'OK SEPARATION RULES (paralelas isentas, mesma strip conflita)' : 'FALHA SEPARATION');
+
+// ---------- hover (helicóptero) ----------
+const hvCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+const hvH = new Aircraft({
+  cs: 'PR-HVR', radio: 'Helicóptero', type: 'H125', kind: 'hel',
+  x: 10, y: 8, alt: 1500, spd: 80, hdg: 270,
+  nav: { mode: 'hdg', hdg: 270, turn: null },
+});
+hvH.heliAuto = false; hvH.heliState = 'crossing'; hvH.wptExit = [-20, 0];
+hvCore.aircraft.push(hvH);
+const rHv1 = Commands.parse('PR-HVR MAINTAIN HOVER', hvCore);
+const pos0 = [hvH.x, hvH.y];
+let thv = 0;
+while (thv < 30) { hvH.update(0.5, hvCore); thv += 0.5; }
+const stayed = Math.abs(hvH.x - pos0[0]) < 0.05 && Math.abs(hvH.y - pos0[1]) < 0.05 && hvH.spd < 3 && hvH.hovering;
+const rHv2 = Commands.parse('PR-HVR HOLD POSITION', hvCore); // já pairando — ok de novo
+const rHvAlias = !rHv2.err && hvH.hovering;
+const rHv3 = Commands.parse('PR-HVR DCT FAROL', hvCore);
+const leftHover = !hvH.hovering && !rHv3.err;
+const rHvNat = Commands.parse('PR-HVR PERMANECA PAIRADO', hvCore);
+const backHover = hvH.hovering && !rHvNat.err;
+const rHvGo = Commands.parse('PR-HVR CONTINUE NAVIGATION', hvCore);
+const resumed = !hvH.hovering && hvH.heliAuto && !rHvGo.err;
+const fx = new Aircraft({
+  cs: 'TAM9400', radio: 'LATAM', type: 'A320', kind: 'arr',
+  x: -5, y: 5, alt: 5000, spd: 200, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+hvCore.aircraft.push(fx);
+const rFx = Commands.parse('TAM9400 HOVER', hvCore);
+const fxDenied = !!(rFx.results[0] && rFx.results[0].err);
+console.log('HOVER  ->', rHv1.atcText, '| stayed?', stayed, '| dct clears?', leftHover, '| resume?', resumed, '| fixed-wing deny?', fxDenied);
+console.log(stayed && rHvAlias && leftHover && backHover && resumed && fxDenied
+  ? 'OK HOVER (estacionário, aliases, DCT/PROSSEGUIR limpam, asa fixa recusada)'
+  : 'FALHA HOVER ' + JSON.stringify({ stayed, rHvAlias, leftHover, backHover, resumed, fxDenied, rb: rHv1.results }));
+
+// ---------- holding pattern (racetrack) ----------
+const hpCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
+const hpAc = new Aircraft({
+  cs: 'AZU9500', radio: 'Azul', type: 'A20N', kind: 'arr',
+  x: U.fix('GOMES')[0] - 8, y: U.fix('GOMES')[1], alt: 6000, spd: 210, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null },
+});
+hpCore.aircraft.push(hpAc);
+const rHp = Commands.parse('AZU9500 ENTER HOLDING OVER GOMES', hpCore);
+const hpNavOk = !rHp.err && hpAc.nav.mode === 'hold' && hpAc.nav.phase === 'entry'
+  && hpAc.nav.turn === 'R' && hpAc.nav.entry === 'direct' && typeof hpAc.nav.inboundHdg === 'number';
+let thp = 0;
+const phases = new Set();
+while (thp < 900) {
+  hpAc.update(0.5, hpCore);
+  thp += 0.5;
+  if (hpAc.nav.mode === 'hold') phases.add(hpAc.nav.phase);
+}
+const raced = phases.has('outbound') && phases.has('inbound') && (phases.has('outbound_turn') || phases.has('inbound_turn'));
+const pathPts = Holding.pathPoints(hpAc.nav, hpAc.spd);
+const pathOk = pathPts.length > 8;
+const rHpL = Commands.parse('AZU9500 HOLD GOMES LEFT', hpCore);
+const leftOk = !rHpL.err && hpAc.nav.turn === 'L';
+const rHpNat = Commands.parse('AZU9500 AGUARDE SOBRE GOMES', hpCore);
+const natOk = !rHpNat.err && hpAc.nav.mode === 'hold' && hpAc.nav.fix === 'GOMES';
+hpAc.clrAlt = 6000;
+Commands.parse('AZU9500 A 5000', hpCore);
+const altKeepsHold = hpAc.nav.mode === 'hold' && hpAc.clrAlt === 5000;
+Commands.parse('AZU9500 DCT NIDOL', hpCore);
+const dctClears = hpAc.nav.mode !== 'hold';
+console.log('HOLD  ->', rHp.atcText, '| phases:', [...phases].join(','), '| pathPts', pathPts.length);
+console.log(hpNavOk && raced && pathOk && leftOk && natOk && altKeepsHold && dctClears
+  ? 'OK HOLDING PATTERN (racetrack, L/R, aliases, alt mantém, DCT limpa)'
+  : 'FALHA HOLDING ' + JSON.stringify({ hpNavOk, raced, pathOk, leftOk, natOk, altKeepsHold, dctClears, phases: [...phases] }));
 
 // ---------- uso flexivel de pistas (pouso/dec/ambas por pista) ----------
 const ruCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });

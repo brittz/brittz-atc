@@ -468,11 +468,17 @@ const Emergency = (() => {
 
   function answer(ac, queryToken) {
     const q = normalizeQuery(queryToken);
-    if (!q) return { err: 'consulta de emergência inválida' };
+    if (!q) return (typeof PilotReply !== 'undefined')
+      ? PilotReply.input('Consulta de emergência inválida')
+      : { err: 'consulta de emergência inválida', errKind: 'input' };
     const e = hydrate(ac.emergency);
-    if (!e || !e.active) return { err: 'negativo, não declaramos emergência' };
+    if (!e || !e.active) return (typeof PilotReply !== 'undefined')
+      ? PilotReply.ops('negativo, não declaramos emergência')
+      : { err: 'negativo, não declaramos emergência', errKind: 'ops' };
     ac.emergency = e;
     e.answers[q] = true;
+    e.flags = e.flags || {};
+    e.flags.atcContact = true;
     let rb = '';
     if (q === 'nature') rb = e.info.nature;
     else if (q === 'souls') rb = 'pessoas a bordo ' + e.info.souls;
@@ -572,7 +578,16 @@ const Emergency = (() => {
   function initiative(ac) {
     const e = hydrate(ac.emergency);
     if (!e || !e.active) return null;
-    if (e.stage === 'declared' && !e.answers.nature) return `${e.declaration}, repetindo, ${e.info.nature}`;
+    // Após a declaração inicial (startEmergency), não repetir MAYDAY/PAN no rádio
+    if (e.stage === 'declared' && !e.answers.nature) {
+      if (e.flags && e.flags.atcContact) return null;
+      // um único lembrete suave, sem repetir a tripla declaração
+      if (!e.flags) e.flags = {};
+      if (e.flags.remindedDeclare) return null;
+      e.flags.remindedDeclare = true;
+      ac.emergency = e;
+      return 'aguardando suas instruções, ' + e.info.nature;
+    }
     if (e.stage === 'identified' && !e.answers.intentions) return 'solicitamos vetores prioritários';
     if (e.stage === 'vectoring' && e.info.runway) return 'solicitamos aproximação direta para a pista ' + e.info.runway;
     if (e.stage === 'approach' && e.evolution === 'worsening') return 'impossível atraso, prosseguindo para pouso';

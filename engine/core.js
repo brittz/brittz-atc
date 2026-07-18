@@ -366,41 +366,62 @@ class GameCore {
   maybePilotInitiative(ac) {
     if (!ac || !ac.airborne || ac.state === 'done' || !ac.pilotAi) return;
     if (this.time < ac.pilotAi.nextAt) return;
+    const ai = ac.ensurePilotAi ? ac.ensurePilotAi() : ac.pilotAi;
+    if (ai.standbyUntil && this.time < ai.standbyUntil) {
+      ai.nextAt = ai.standbyUntil;
+      return;
+    }
     if (ac.hasPendingReport && ac.hasPendingReport()) {
-      ac.pilotAi.nextAt = this.time + U.rnd(45, 80);
+      ai.nextAt = this.time + U.rnd(45, 80);
       return;
     }
     let text = null;
+    let ask = null;
     if (ac.emergency && ac.emergency.active) {
       text = Emergency.initiative(ac);
-      ac.pilotAi.nextAt = this.time + U.rnd(35, 65);
+      ai.nextAt = this.time + U.rnd(50, 90);
+    } else if (ai.pendingAsk && ai.standbyUntil && this.time >= ai.standbyUntil) {
+      // atualização após espera longa
+      text = 'solicitamos atualização';
+      ai.nextAt = this.time + U.rnd(100, 160);
+      ai.standbyUntil = 0;
     } else if (ac.kind === 'arr' && ac.nav.mode === 'route' && !ac.via && U.dist(0, 0, ac.x, ac.y) < 30 && ac.alt > 9000) {
       text = 'solicitamos descida ou vetores para a aproximação';
-      ac.pilotAi.nextAt = this.time + U.rnd(90, 140);
+      ask = 'descent';
+      ai.nextAt = this.time + U.rnd(90, 140);
     } else if (ac.kind === 'arr' && ac.nav.mode === 'hold') {
       text = 'solicitamos previsão para a aproximação';
-      ac.pilotAi.askedHold = true;
-      ac.pilotAi.nextAt = this.time + U.rnd(110, 160);
+      ask = 'hold';
+      ai.askedHold = true;
+      ai.nextAt = this.time + U.rnd(110, 160);
     } else if (ac.kind === 'arr' && ac.app.phase === 'none' && ac.nav.mode === 'hdg' && U.dist(0, 0, ac.x, ac.y) < 18) {
       text = 'solicitamos vetores para a final';
-      ac.pilotAi.askedVectors = true;
-      ac.pilotAi.nextAt = this.time + U.rnd(90, 140);
+      ask = 'vectors';
+      ai.askedVectors = true;
+      ai.nextAt = this.time + U.rnd(90, 140);
+    } else if (ac.kind === 'arr' && ac.app.phase !== 'none' && !ac.landClr && U.dist(0, 0, ac.x, ac.y) < 8) {
+      text = 'solicitamos autorização de pouso';
+      ask = 'land';
+      ai.nextAt = this.time + U.rnd(70, 110);
     } else if (ac.kind === 'dep') {
       const exitFix = DATA.SIDS[ac.sid] && DATA.SIDS[ac.sid].exit;
       const nearExit = exitFix && ac.fixDist(exitFix) < 14;
       if (ac.alt >= 8500 && nearExit && !ac.handedOff) {
         text = 'prontos para transferência ao Centro';
-        ac.pilotAi.askedCenter = true;
-        ac.pilotAi.nextAt = this.time + U.rnd(90, 140);
+        ask = 'center';
+        ai.askedCenter = true;
+        ai.nextAt = this.time + U.rnd(90, 140);
       } else if (ac.airborne && ac.clrAlt <= 5000 && ac.alt > 4200 && !ac.emergency) {
         text = 'nivelando 5.000, solicitamos subida adicional quando disponível';
-        ac.pilotAi.nextAt = this.time + U.rnd(100, 150);
+        ask = 'climb';
+        ai.nextAt = this.time + U.rnd(100, 150);
       } else {
-        ac.pilotAi.nextAt = this.time + U.rnd(70, 110);
+        ai.nextAt = this.time + U.rnd(70, 110);
       }
     } else {
-      ac.pilotAi.nextAt = this.time + U.rnd(80, 130);
+      ai.nextAt = this.time + U.rnd(80, 130);
     }
+    if (ask) ac.markPilotAsk(ask);
     if (text) this.radioPilot(ac, text, 0.4);
   }
 
@@ -508,7 +529,9 @@ class GameCore {
     ac.rwy = ac.app.rwy;
     ac.hdg = DATA.RUNWAYS[ac.rwy].hdg;
     ac.alt = 0; ac.vs = 0;
-    ac.timer = U.rnd(8, 14); // tempo para livrar após desacelerar
+    ac.timer = U.rnd(8, 14); // tempo para livrar após autorização + desaceleração
+    ac.vacateClr = false;
+    ac.vacateSide = null;
     ac.app = { phase: 'none', rwy: null };
     this.stats.landed++;
     let pts = 100;
@@ -535,7 +558,7 @@ class GameCore {
       this.syncAirportState();
     }
     this.addScore(pts, ac.cs + ' pousou pista ' + ac.rwy);
-    this.radioPilot(ac, `pista livre em seguida, obrigado, bom serviço`, 2.5);
+    this.radioPilot(ac, `pousado pista ${ac.rwy}, aguardando`, 2.5);
     this.emit({ type: 'chime' });
   }
 
@@ -565,9 +588,11 @@ class GameCore {
   execPending(ac, p) {
     const { results } = Commands.run(ac, p.tokens, this);
     const rbs = results.filter(r => r && r.rb).map(r => r.rb);
-    const errs = results.filter(r => r && r.err).map(r => r.err);
+    const errText = (typeof PilotReply !== 'undefined' && PilotReply.formatMany)
+      ? PilotReply.formatMany(results.filter(r => r && r.err))
+      : null;
     if (rbs.length) this.radioPilot(ac, rbs.join(', '), 0.3);
-    if (errs.length) this.radioPilot(ac, 'Não foi possível cumprir a condicional: ' + errs.join('; '), 0.3);
+    if (errText) this.radioPilot(ac, errText, 0.3);
   }
 
   // ---------- comandos ----------
@@ -577,36 +602,40 @@ class GameCore {
     if (!res) return { ok: false };
     if (res.err) { this.emit({ type: 'radio', who: 'sys', text: res.err, cls: 'bad' }); return { ok: false, err: res.err }; }
     const { ac, results, atcText } = res;
-    if (atcText) this.emit({ type: 'radio', who: 'atc', cs: ac.cs, text: ac.cs + ', ' + atcText + '.' });
-    const rbs = [], errs = [];
+    if (atcText) this.emit({ type: 'radio', who: 'atc', cs: ac.cs, radio: ac.radio, text: atcText + '.' });
+    const rbs = [], errResults = [];
     for (const r of results) {
       if (!r) continue;
-      if (r.err) errs.push(r.err);
+      if (r.err) errResults.push(r);
       else if (r.rb) rbs.push(r.rb);
     }
     if (rbs.length) this.radioPilot(ac, rbs.join(', '));
-    if (errs.length) this.radioPilot(ac, 'Negativo, ' + errs.join('; '));
+    const errText = (typeof PilotReply !== 'undefined' && PilotReply.formatMany)
+      ? PilotReply.formatMany(errResults)
+      : (errResults.length ? 'Negativo, ' + errResults.map(r => r.err).join('; ') : null);
+    if (errText) this.radioPilot(ac, errText);
     const early = results.some(r => r && r.early);
     return { ok: true, cs: ac.cs, early };
   }
 
   // ---------- conflitos ----------
   checkConflicts(dt) {
+    const thr = (typeof Separation !== 'undefined' && Separation.thresholds)
+      ? Separation.thresholds()
+      : { nm: 3, ft: 1000, predictNm: 3.2 };
     const air = this.aircraft.filter(a => a.airborne && a.alt > 400);
     for (const a of air) a.stca = 0;
     this.conflictPairs = [];
     let anyLoss = false;
     for (let i = 0; i < air.length; i++) for (let j = i + 1; j < air.length; j++) {
       const a = air[i], b = air[j];
-      // aproximações paralelas estabelecidas em pistas distintas: separadas por procedimento
-      const estA = a.app.phase === 'loc' || a.app.phase === 'gs';
-      const estB = b.app.phase === 'loc' || b.app.phase === 'gs';
-      if (estA && estB && a.app.rwy !== b.app.rwy) continue;
+      // regras do aeroporto (paralelas independentes, etc.)
+      if (typeof Separation !== 'undefined' && Separation.isExempt(a, b)) continue;
 
       const d = U.dist(a.x, a.y, b.x, b.y);
       const dz = Math.abs(a.alt - b.alt);
       const key = a.cs + '|' + b.cs;
-      if (d < 3 && dz < 1000) {
+      if (d < thr.nm && dz < thr.ft) {
         a.stca = b.stca = 2; anyLoss = true;
         this.conflictPairs.push({ a, b, d, loss: true });
         let e = this.sepPairs.get(key);
@@ -623,14 +652,14 @@ class GameCore {
           this.addScore(-25, `conflito persiste há ${Math.round(e.t)} s: ${a.cs} × ${b.cs}`);
         }
       } else {
-        if (d > 5 || dz > 1400) this.sepPairs.delete(key);
+        if (d > thr.nm + 2 || dz > thr.ft + 400) this.sepPairs.delete(key);
         // previsão 60 s (linear)
         const t = 60 / 3600;
         const ax = a.x + Math.sin(U.d2r(a.hdg)) * a.spd * t, ay = a.y + Math.cos(U.d2r(a.hdg)) * a.spd * t;
         const bx = b.x + Math.sin(U.d2r(b.hdg)) * b.spd * t, by = b.y + Math.cos(U.d2r(b.hdg)) * b.spd * t;
         const df = U.dist(ax, ay, bx, by);
         const za = a.alt + a.vs, zb = b.alt + b.vs;
-        if (Math.min(d, df) < 3.2 && (dz < 1000 || Math.abs(za - zb) < 1000)) {
+        if (Math.min(d, df) < thr.predictNm && (dz < thr.ft || Math.abs(za - zb) < thr.ft)) {
           if (a.stca === 0) a.stca = 1;
           if (b.stca === 0) b.stca = 1;
           this.conflictPairs.push({ a, b, d, loss: false });
@@ -731,7 +760,13 @@ class GameCore {
         star: a.star, sid: a.sid, dest: a.dest, rwy: a.rwy,
         emergency: Emergency.serialize(a.emergency), via: a.via, stca: a.stca,
         goingAround: a.goingAround, timer: a.timer,
+        vacateClr: !!a.vacateClr, vacateSide: a.vacateSide || null,
+        pilotAi: a.pilotAi ? {
+          pendingAsk: a.pilotAi.pendingAsk || null,
+          standbyUntil: a.pilotAi.standbyUntil || 0,
+        } : null,
         heliState: a.heliState, heliAuto: a.heliAuto,
+        hovering: !!a.hovering, hoverPos: a.hoverPos, hoverHdg: a.hoverHdg,
         crossRequested: a.crossRequested, crossCleared: a.crossCleared,
         wptExit: a.wptExit, trail: a.trail,
         pending: (a.pending || []).map(p => ({ label: p.label })),

@@ -99,11 +99,24 @@ const UI = (() => {
     while (box.children.length > 120) box.removeChild(box.firstChild);
     box.scrollTop = box.scrollHeight;
   }
-  function logATC(text) { log('SBCV APP', text, 'atc'); radioClick(); }
-  function logPilot(ac, text) {
-    log(ac.cs, text, 'pilot' + (ac.emergency ? ' emg' : ''));
+  function logATC(text, meta) {
+    let body = text;
+    if (meta && meta.cs && typeof RadioPhrase !== 'undefined') {
+      const spoken = RadioPhrase.speakCallsign(meta.cs, { radio: meta.radio, lang: 'pt' });
+      const re = new RegExp('^' + String(meta.cs).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*,?\\s*', 'i');
+      body = spoken + ', ' + String(text || '').replace(re, '');
+    }
+    log('SBCV APP', body, 'atc');
     radioClick();
-    speak(ac, text.replace(ac.cs, '').trim() + ', ' + spellCallsign(ac));
+  }
+  function logPilot(ac, text) {
+    const spoken = (typeof RadioPhrase !== 'undefined')
+      ? RadioPhrase.speakCallsign(ac.cs, { radio: ac.radio, lang: 'pt' })
+      : (ac.radio || ac.cs);
+    log(spoken, text, 'pilot' + (ac.emergency ? ' emg' : ''));
+    radioClick();
+    const body = String(text || '').replace(ac.cs, '').trim();
+    speak(ac, (body ? body + ', ' : '') + spoken);
   }
   function logSys(text, cls) { log('SISTEMA', text, 'sys ' + (cls || '')); }
 
@@ -115,11 +128,6 @@ const UI = (() => {
   function logChat(from, text, priv) {
     const who = priv ? '🔒 ' + esc(from) + ' → você:' : '💬 ' + esc(from) + ':';
     log(who, esc(text), 'chatmsg' + (priv ? ' priv' : ''));
-  }
-
-  function spellCallsign(ac) {
-    const num = ac.cs.replace(/^[A-Z]+/, '').split('').join(' ');
-    return ac.radio + ' ' + num;
   }
 
   function emergencySummary(a) {
@@ -195,6 +203,7 @@ const UI = (() => {
       return 'EMG ' + base;
     }
     if (a.kind === 'hel') {
+      if (a.hovering) return 'HOVER';
       if (!a.heliAuto) return 'VETOR';
       return { inbound: a.crossRequested ? 'PEDE CRZ' : 'VFR', waiting: 'AGUARDA CRZ',
                crossing: 'CRUZANDO', clear: 'DEIXANDO' }[a.heliState] || 'VFR';
@@ -203,8 +212,8 @@ const UI = (() => {
     if (a.state === 'holdshort') return 'PRONTO ' + a.rwy;
     if (a.state === 'lineup') return 'ALINHADO';
     if (a.state === 'takeoff') return 'DECOLANDO';
-    if (a.state === 'abort') return 'RTO';
-    if (a.state === 'rollout') return 'POUSOU';
+    if (a.state === 'abort') return a.vacateClr ? 'RTO LIVRANDO' : 'RTO — LIVRAR';
+    if (a.state === 'rollout') return a.vacateClr ? 'LIVRANDO' : 'POUSOU — LIVRAR';
     if (a.goingAround) return 'ARREMET.';
     if (a.app.phase === 'gs') return (a.landClr ? 'POUSO ' : 'FINAL ') + a.app.rwy;
     if (a.app.phase === 'loc') return 'LOC ' + a.app.rwy;
@@ -359,9 +368,14 @@ const UI = (() => {
     } else if (a.state === 'lineup') {
       btn('Decolagem ' + a.rwy, 'DEC ' + a.rwy, 'good');
       btn('Decolagem + subir VIA SID', 'DEC ' + a.rwy + ' VIA', 'good');
-      btn('Abandonar a pista', 'ABORTAR', 'bad');
+      btn('Livrar pista', 'LIVRAR', 'bad');
     } else if (a.state === 'takeoff') {
       btn('ABORTAR decolagem', 'ABORTAR', 'bad');
+    } else if (a.state === 'rollout' || a.state === 'abort') {
+      btn('Livrar pista', 'LIVRAR', 'good');
+      btn('Livrar à esquerda', 'LIVRAR L');
+      btn('Livrar à direita', 'LIVRAR R');
+      btn('Livrar quando possível', 'LIVRAR ABLE');
     } else if (a.airborne) {
       if (a.kind === 'arr') {
         if (a.star && !a.via && a.nav.mode === 'route') btn('Descer VIA STAR', 'VIA', 'good');
@@ -379,6 +393,8 @@ const UI = (() => {
           btn('Arremeter', 'ARR', 'bad');
         } else btn('Arremeter', 'ARR', 'bad');
       } else if (a.kind === 'hel') {
+        if (a.hovering) btn('Prosseguir', 'PROSSEGUIR', 'good');
+        else btn('Hover', 'HOVER');
         if (!a.crossCleared) btn('Autorizar cruzamento', 'CRZ', 'good');
       } else {
         btn('Transferir ao Centro', 'HO', 'good');
@@ -386,8 +402,26 @@ const UI = (() => {
       if (a.emergency) {
         Emergency.availableQuickActions(a.emergency).forEach(it => btn(it.label, it.cmd, it.cls));
       }
+      // Standby / previsão — só com solicitação pendente do piloto
+      const ask = a.pilotAi && a.pilotAi.pendingAsk;
+      if (ask) {
+        btn('Aguarde', 'AGUARDE');
+        btn('Aguarde - Tráfego', 'AGUARDE TRAFFIC');
+        if (game.airportState && game.airportState.state === 'emergency')
+          btn('Aguarde - Emergência', 'AGUARDE EMERGENCY');
+        if (ask === 'descent' || ask === 'hold' || ask === 'vectors' || ask === 'app')
+          btn('Aproximação em breve', 'PREVISAO APP');
+        if (ask === 'land') btn('Pouso em breve', 'PREVISAO LAND');
+        if (ask === 'climb' || ask === 'center') btn('Autorização em breve', 'PREVISAO CLR');
+        if (ask === 'to') btn('Decolagem em breve', 'PREVISAO TO');
+      }
       btn('V mín', 'V MIN', 'spd');
       btn('Vel. livre', 'V LIVRE', 'spd');
+    }
+    // Solo: aguardar por emergência (saídas no ponto de espera / alinhadas)
+    if ((a.state === 'holdshort' || a.state === 'lineup') && game.airportState && game.airportState.state === 'emergency') {
+      btn('Aguarde - Emergência', 'AGUARDE EMERGENCY');
+      btn('Decolagem em breve', 'PREVISAO TO');
     }
     const wheelsOn = a.airborne || (a.kind === 'dep' && a.state !== 'rollout');
     const sig = a.cs + '|' + items.map(i => i.label + '~' + i.cmd + '~' + i.cls).join(';') + '|' + wheelsOn;

@@ -14,14 +14,37 @@ if (typeof DATA === 'undefined' && typeof require !== 'undefined') {
 if (typeof Emergency === 'undefined' && typeof require !== 'undefined') {
   globalThis.Emergency = require('./emergency.js').Emergency;
 }
+if (typeof Holding === 'undefined' && typeof require !== 'undefined') {
+  globalThis.Holding = require('./holding.js').Holding;
+}
+
+// Respostas de recusa do piloto: input = erro do controlador (diagnóstico);
+// ops = comando entendido mas impossível na situação (fraseologia operacional).
+const PilotReply = {
+  input(msg) { return { err: String(msg), errKind: 'input' }; },
+  ops(msg, extra) { return Object.assign({ err: String(msg), errKind: 'ops' }, extra || {}); },
+  format(r) {
+    if (!r || !r.err) return null;
+    if (r.errKind === 'input') return 'Negativo. ' + r.err;
+    const m = r.err;
+    if (/^(Negativo|Impossível|Unable|aguarde)/i.test(m)) return m;
+    return 'Negativo, ' + m;
+  },
+  formatMany(results) {
+    const parts = (results || []).map(r => PilotReply.format(r)).filter(Boolean);
+    return parts.length ? parts.join(' · ') : null;
+  },
+};
+if (typeof globalThis !== 'undefined') globalThis.PilotReply = PilotReply;
 
 // estados de solo/voo:
 //  'taxi'      — strip visível, ainda taxiando (sem posição no radar)
 //  'holdshort' — parada no ponto de espera
 //  'lineup'    — alinhada na pista
 //  'takeoff'   — rolagem de decolagem
+//  'abort'     — RTO: frenagem na pista (aguarda LIVRAR para sair)
 //  'air'       — em voo
-//  'rollout'   — corrida de pouso
+//  'rollout'   — corrida de pouso (aguarda LIVRAR para sair)
 //  'done'      — remover do jogo
 
 class Aircraft {
@@ -62,17 +85,130 @@ class Aircraft {
       path: [], pathT: 0,              // histórico completo da rota (linha opcional)
       stca: 0,                   // 0 ok, 1 previsto, 2 perda
       timer: opts.timer ?? 0,    // uso genérico (taxi, rollout...)
+      vacateClr: opts.vacateClr ?? false, // autorizado a livrar a pista
+      vacateSide: opts.vacateSide ?? null, // null | 'L' | 'R' | 'NEXT' | 'ABLE'
+      hovering: opts.hovering ?? false,   // heli: voo pairado sob instrução ATC
+      hoverPos: opts.hoverPos ?? null,    // [x,y] ao entrar em hover
+      hoverHdg: opts.hoverHdg ?? null,
       handedOff: false,
       spawnT: opts.spawnT ?? 0,
       estabAnnounced: false,
       offRadarPenalized: false,
-      pilotAi: opts.pilotAi ?? { nextAt: opts.spawnT ?? 0, askedVectors: false, askedCenter: false, askedHold: false },
+      pilotAi: opts.pilotAi ?? {
+        nextAt: opts.spawnT ?? 0,
+        askedVectors: false, askedCenter: false, askedHold: false,
+        pendingAsk: null, standbyUntil: 0, standbyReason: null,
+      },
     });
     this.tas = this.spd;
   }
 
   get airborne() { return this.state === 'air'; }
-  get onGround() { return ['taxi','holdshort','lineup','takeoff','rollout'].includes(this.state); }
+  get onGround() { return ['taxi','holdshort','lineup','takeoff','abort','rollout'].includes(this.state); }
+
+  // ocupa a pista (bloqueia pouso/decolagem de outros no mesmo par)
+  get onRunway() { return ['lineup', 'takeoff', 'rollout', 'abort'].includes(this.state); }
+
+  clearHover() {
+    if (!this.hovering) return;
+    this.hovering = false;
+    this.hoverPos = null;
+    this.hoverHdg = null;
+    if (this.nav && this.nav.mode === 'hover')
+      this.nav = { mode: 'hdg', hdg: this.hdg, turn: null };
+  }
+
+  // Hover — exclusivo de helicópteros
+  cmdHover() {
+    if (this.kind !== 'hel' && !(this.perf && this.perf.heli))
+      return PilotReply.ops('instrução disponível apenas para helicópteros');
+    if (!this.airborne) return PilotReply.ops('ainda no solo');
+    this.hovering = true;
+    this.heliAuto = false;
+    this.hoverPos = [this.x, this.y];
+    this.hoverHdg = this.hdg;
+    this.nav = { mode: 'hover', hdg: this.hdg, turn: null };
+    this.clearPilotAsk();
+    return { rb: 'Pairando nesta posição' };
+  }
+
+  // Retoma deslocamento (após hover) — tipicamente VFR de volta à rota
+  cmdProceed() {
+    if (this.kind !== 'hel' && !(this.perf && this.perf.heli))
+      return PilotReply.ops('instrução disponível apenas para helicópteros');
+    if (!this.airborne) return PilotReply.ops('ainda no solo');
+    this.clearHover();
+    this.heliAuto = true;
+    if (this.heliState === 'waiting' && this.crossCleared) this.heliState = 'crossing';
+    if (this.wptExit)
+      this.nav = { mode: 'hdg', hdg: U.brg(this.x, this.y, this.wptExit[0], this.wptExit[1]), turn: null };
+    else
+      this.nav = { mode: 'hdg', hdg: this.hdg, turn: null };
+    this.clearPilotAsk();
+    return { rb: 'Prosseguindo' };
+  }
+
+  ensurePilotAi() {
+    if (!this.pilotAi) {
+      this.pilotAi = {
+        nextAt: 0, askedVectors: false, askedCenter: false, askedHold: false,
+        pendingAsk: null, standbyUntil: 0, standbyReason: null,
+      };
+    }
+    return this.pilotAi;
+  }
+
+  markPilotAsk(type) {
+    const ai = this.ensurePilotAi();
+    ai.pendingAsk = type || null;
+  }
+
+  clearPilotAsk() {
+    if (!this.pilotAi) return;
+    this.pilotAi.pendingAsk = null;
+    this.pilotAi.standbyUntil = 0;
+    this.pilotAi.standbyReason = null;
+  }
+
+  // Aguarde / stand by — silencia re-solicitações por um intervalo
+  cmdStandby(reason, game) {
+    const ai = this.ensurePilotAi();
+    const r = reason === 'TRAFFIC' || reason === 'EMERGENCY' || reason === 'INSTR' ? reason : null;
+    const wait = r === 'EMERGENCY' ? U.rnd(140, 220)
+      : r === 'TRAFFIC' ? U.rnd(100, 160)
+      : U.rnd(75, 130);
+    const now = game && game.time != null ? game.time : 0;
+    ai.standbyUntil = now + wait;
+    ai.standbyReason = r;
+    ai.nextAt = ai.standbyUntil;
+    if (this.emergency && this.emergency.active) {
+      this.emergency.flags = this.emergency.flags || {};
+      this.emergency.flags.atcContact = true;
+    }
+    if (r === 'TRAFFIC') return { rb: 'Aguardando devido ao tráfego' };
+    if (r === 'EMERGENCY') return { rb: 'Aguardando devido à emergência' };
+    if (r === 'INSTR') return { rb: 'Aguardando instruções' };
+    return { rb: 'Aguardando' };
+  }
+
+  // Previsão / expect — informação de que a autorização virá em breve
+  cmdExpect(what, game) {
+    const ai = this.ensurePilotAi();
+    const w = what === 'APP' || what === 'LAND' || what === 'TO' || what === 'CLR' ? what : 'CLR';
+    const now = game && game.time != null ? game.time : 0;
+    ai.standbyUntil = now + U.rnd(90, 150);
+    ai.nextAt = ai.standbyUntil;
+    ai.pendingAsk = null;
+    ai.standbyReason = null;
+    if (this.emergency && this.emergency.active) {
+      this.emergency.flags = this.emergency.flags || {};
+      this.emergency.flags.atcContact = true;
+    }
+    if (w === 'APP') return { rb: 'Ciente, aproximação em breve' };
+    if (w === 'LAND') return { rb: 'Ciente, pouso em breve' };
+    if (w === 'TO') return { rb: 'Ciente, decolagem em breve' };
+    return { rb: 'Ciente, autorização em breve' };
+  }
 
   // ---- helpers ----
   fixDist(name) { const f = U.fix(name); return U.dist(this.x, this.y, f[0], f[1]); }
@@ -111,30 +247,31 @@ class Aircraft {
 
   // ---- comandos (retornam mensagem de readback ou {err}) ----
   cmdAlt(alt) {
-    if (alt < 2000 || alt > 24000) return { err: 'altitude fora dos limites da TMA (2.000–FL240)' };
+    if (alt < 2000 || alt > 24000) return PilotReply.input('Nível/altitude solicitado indisponível');
     const emgErr = Emergency.validateAltitude(this, alt);
-    if (emgErr) return { err: emgErr };
+    if (emgErr) return PilotReply.ops(emgErr);
     // autorização de subida dada ainda no solo (aplicada após a decolagem)
     if (this.onGround) {
-      if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
+      if (this.kind !== 'dep' || this.state === 'rollout') return PilotReply.ops('ainda no solo');
       this.clrAlt = alt;
       this.altAssigned = true; // restrição explícita: não aplicar o padrão de 5.000 ft
       return { rb: 'Após a decolagem, subindo para ' + U.fmtAlt(alt) };
     }
     const dir = alt < this.alt - 100 ? 'Descendo para ' : alt > this.alt + 100 ? 'Subindo para ' : 'Mantendo ';
     this.clrAlt = alt; this.via = false;
+    this.clearPilotAsk();
     return { rb: dir + U.fmtAlt(alt) };
   }
   cmdSpd(spd) {
-    if (this.onGround) return { err: 'ainda no solo' };
+    if (this.onGround) return PilotReply.ops('ainda no solo');
     const perf = this.effectivePerf();
     // mínima/máxima operacional: o valor fica a critério do comandante
     // (flape, peso, margem de estol) e varia com a fase do voo
     if (spd === 'MIN') { this.spdMode = 'min'; this.clrSpd = 0; return { rb: 'Reduzindo para a velocidade mínima operacional' }; }
     if (spd === 'MAX') { this.spdMode = 'max'; this.clrSpd = 0; return { rb: 'Acelerando para a velocidade máxima' }; }
     this.spdMode = null;
-    if (spd !== 0 && spd < perf.min) return { err: `impossível, nossa mínima atual é ${Math.round(perf.min)} nós` };
-    if (spd > perf.max) return { err: `impossível, nossa máxima atual é ${Math.round(perf.max)} nós` };
+    if (spd !== 0 && spd < perf.min) return PilotReply.ops(`impossível, nossa mínima atual é ${Math.round(perf.min)} nós`);
+    if (spd > perf.max) return PilotReply.ops(`impossível, nossa máxima atual é ${Math.round(perf.max)} nós`);
     this.clrSpd = spd;
     if (spd === 0) return { rb: 'Velocidade a nosso critério' };
     const dir = spd < this.spd - 5 ? 'Reduzindo ' : spd > this.spd + 5 ? 'Acelerando ' : 'Mantendo ';
@@ -142,13 +279,14 @@ class Aircraft {
   }
   cmdHdg(hdg, turn) {
     const emgErr = this.airborne ? Emergency.validateHeading(this, hdg) : null;
-    if (emgErr) return { err: emgErr };
+    if (emgErr) return PilotReply.ops(emgErr);
     // proa designada ainda no solo: substitui a SID após a decolagem (900 ft)
     if (!this.airborne) {
-      if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
+      if (this.kind !== 'dep' || this.state === 'rollout') return PilotReply.ops('ainda no solo');
       this.depHdg = U.norm360(hdg);
       return { rb: 'Após a decolagem, proa ' + U.fmtHdg(hdg) };
     }
+    this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
     if (this.kind === 'hel') this.heliAuto = false; // controlador assume a navegação
@@ -157,13 +295,14 @@ class Aircraft {
     return { rb: t + U.fmtHdg(hdg) };
   }
   cmdDirect(fixName) {
-    if (!U.fix(fixName)) return { err: 'fixo desconhecido' };
+    if (!U.fix(fixName)) return PilotReply.input('Fixo ' + fixName + ' não encontrado');
     // direto designado ainda no solo: substitui a SID após a decolagem (900 ft)
     if (!this.airborne) {
-      if (this.kind !== 'dep' || this.state === 'rollout') return { err: 'ainda no solo' };
+      if (this.kind !== 'dep' || this.state === 'rollout') return PilotReply.ops('ainda no solo');
       this.depDct = fixName;
       return { rb: 'Após a decolagem, direto ' + fixName };
     }
+    this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
     if (this.kind === 'hel') this.heliAuto = false;
@@ -188,8 +327,9 @@ class Aircraft {
     // Vale no solo (junto com a decolagem: DEC 09R VIA) ou em voo.
     if (this.kind === 'dep') {
       const sid = this.sid && DATA.SIDS[this.sid];
-      if (!sid) return { err: 'não temos SID designada' };
+      if (!sid) return PilotReply.ops('não temos SID designada');
       const top = sid.top || 15000;
+      this.clearHover();
       this.clrAlt = top;
       this.altAssigned = true;
       // em voo e vetorado: subir via SID inclui retomar a navegação da carta
@@ -197,42 +337,48 @@ class Aircraft {
         const join = this.nearestOf(sid.route);
         this.sidEngaged = true;
         this.nav = { mode: 'route', route: sid.route.slice(sid.route.indexOf(join)), idx: 0 };
+        this.clearPilotAsk();
         return { rb: 'Subir via SID ' + this.sid + ' para ' + U.fmtAlt(top) + ', direto ' + join };
       }
       // no solo: autoriza a navegação da carta após a decolagem
       this.depViaSid = true;
+      this.clearPilotAsk();
       return { rb: 'Subir via SID ' + this.sid + ' para ' + U.fmtAlt(top) };
     }
     // chegada: "descer via STAR" — cumpre as restrições da carta
-    if (!this.star) return { err: 'não temos STAR designada' };
-    if (this.nav.mode !== 'route') return { err: 'fora da STAR, solicite direto a um fixo da carta primeiro' };
+    if (!this.star) return PilotReply.ops('não temos STAR designada');
+    if (this.nav.mode !== 'route') return PilotReply.ops('fora da STAR, solicite direto a um fixo da carta primeiro');
     const rest = this.aheadRestrictions();
-    if (!rest.length) return { err: 'já cumprimos todas as restrições da carta' };
+    if (!rest.length) return PilotReply.ops('já cumprimos todas as restrições da carta');
+    this.clearHover();
     this.via = true;
     this.clrAlt = rest[rest.length - 1].alt;
+    this.clearPilotAsk();
     return { rb: 'Descer via STAR ' + this.star };
   }
   cmdIls(rwy) {
-    if (!this.airborne) return { err: 'ainda no solo' };
-    if (!DATA.RUNWAYS[rwy]) return { err: 'pista desconhecida' };
+    if (!this.airborne) return PilotReply.ops('impossível na fase atual');
+    if (!DATA.RUNWAYS[rwy]) return PilotReply.input('Pista ' + rwy + ' indisponível');
     const emgErr = Emergency.validateApproach(this, rwy);
-    if (emgErr) return { err: emgErr };
+    if (emgErr) return PilotReply.ops(emgErr);
     this.app = { phase: 'cleared', rwy };
     this.estabAnnounced = false;
+    this.clearPilotAsk();
     return { rb: 'Autorizado ILS pista ' + rwy };
   }
   cmdLand(rwy) {
     if (this.app.phase === 'none' || (rwy && this.app.rwy !== rwy))
-      return { err: 'não estamos na aproximação da pista ' + (rwy || '?') };
+      return PilotReply.ops('não estamos na aproximação da pista ' + (rwy || '?'));
     this.landClr = true;
+    this.clearPilotAsk();
     return { rb: 'Autorizado pouso pista ' + this.app.rwy };
   }
   cmdEmergencyQuery(query) {
     return Emergency.answer(this, query);
   }
   cmdLineup(rwy) {
-    if (this.state !== 'holdshort') return { err: 'não estamos no ponto de espera' };
-    if (DATA.RWY_PAIR[rwy] !== DATA.RWY_PAIR[this.rwy]) return { err: 'estamos no ponto de espera da ' + this.rwy };
+    if (this.state !== 'holdshort') return PilotReply.ops('impossível na fase atual');
+    if (DATA.RWY_PAIR[rwy] !== DATA.RWY_PAIR[this.rwy]) return PilotReply.ops('estamos no ponto de espera da ' + this.rwy);
     this.rwy = rwy;
     this.state = 'lineup';
     const r = DATA.RUNWAYS[rwy];
@@ -240,38 +386,67 @@ class Aircraft {
     return { rb: 'Alinhar e manter, pista ' + rwy };
   }
   cmdTakeoff(rwy, game) {
-    if (!['holdshort','lineup'].includes(this.state)) return { err: 'não estamos prontos na pista' };
+    if (this.airborne) return PilotReply.ops('já estamos em voo');
+    if (!['holdshort','lineup'].includes(this.state)) return PilotReply.ops('impossível na fase atual');
     if (rwy && DATA.RWY_PAIR[rwy] === DATA.RWY_PAIR[this.rwy]) this.rwy = rwy;
-    else if (rwy) return { err: 'estamos no ponto de espera da ' + this.rwy };
+    else if (rwy) return PilotReply.ops('estamos no ponto de espera da ' + this.rwy);
     if (game && game.shouldHoldDeparture && game.shouldHoldDeparture(this.rwy, this))
-      return { err: 'aguarde, prioridade para o tráfego em emergência na pista ' + this.rwy };
+      return PilotReply.ops('aguarde, prioridade para o tráfego em emergência na pista ' + this.rwy);
     const wasLinedUp = this.state === 'lineup';
     const r = DATA.RUNWAYS[this.rwy];
     this.x = r.thr[0]; this.y = r.thr[1]; this.hdg = r.hdg;
     this.state = 'takeoff'; this.spd = 0;
     this.timer = wasLinedUp ? 0 : 6; // tempo para alinhar antes de rolar
+    this.clearPilotAsk();
     return { rb: 'Autorizado decolagem pista ' + this.rwy + ', rolando' };
   }
-  // abortar a decolagem (RTO): desacelera na pista e taxia de volta à cabeceira
+  // abortar a decolagem (RTO): desacelera na pista e aguarda autorização para livrar
   cmdAbort() {
     const perf = this.effectivePerf();
     if (this.state === 'lineup') {
+      // alinhada sem rolagem: sair da pista equivale a livrar
+      return this.cmdVacate(null);
+    }
+    if (this.state !== 'takeoff') return PilotReply.ops('não estamos em rolagem de decolagem');
+    if (this.spd > perf.vr - 12) return PilotReply.ops('acima de V1, vamos prosseguir a decolagem');
+    this.state = 'abort';
+    this.vacateClr = false;
+    return { rb: 'Abortando a decolagem' };
+  }
+
+  // autoriza abandonar a pista (pouso, RTO, alinhada, etc.)
+  cmdVacate(side) {
+    if (!this.onRunway || this.state === 'takeoff') {
+      if (this.state === 'takeoff') return PilotReply.ops('em rolagem — use ABORTAR / RTO antes de livrar');
+      return PilotReply.ops('não estamos ocupando a pista');
+    }
+    const sideTok = side && ['L', 'R', 'NEXT', 'ABLE'].includes(side) ? side : null;
+    this.vacateClr = true;
+    this.vacateSide = sideTok;
+    const sideRb = sideTok === 'L' ? ' à esquerda'
+      : sideTok === 'R' ? ' à direita'
+      : sideTok === 'NEXT' ? ' pela próxima'
+      : sideTok === 'ABLE' ? ' quando possível'
+      : '';
+
+    if (this.state === 'lineup') {
       this.state = 'taxi';
       this.timer = U.rnd(40, 80);
-      return { rb: 'Abandonando a pista, taxiando de volta à cabeceira' };
+      this.vacateClr = false;
+      return { rb: 'Abandonando a pista' + sideRb + ', taxiando de volta à cabeceira' };
     }
-    if (this.state !== 'takeoff') return { err: 'não estamos em rolagem de decolagem' };
-    if (this.spd > perf.vr - 12) return { err: 'acima de V1, vamos prosseguir a decolagem' };
-    this.state = 'abort';
-    return { rb: 'Abortando a decolagem' };
+    // rollout / abort: cumpre quando a velocidade permitir (já parado → em seguida)
+    if (this.state === 'rollout' && this.spd <= 25 && this.timer <= 0)
+      this.timer = U.rnd(4, 8);
+    return { rb: 'Livrando a pista' + sideRb };
   }
 
   // taxiar para outra cabeceira (ex.: após troca das pistas em uso)
   cmdTaxi(rwy) {
-    if (!DATA.RUNWAYS[rwy]) return { err: 'pista desconhecida' };
-    if (!['holdshort', 'lineup'].includes(this.state)) return { err: 'não estamos no pátio nem no ponto de espera' };
+    if (!DATA.RUNWAYS[rwy]) return PilotReply.input('Pista ' + rwy + ' indisponível');
+    if (!['holdshort', 'lineup'].includes(this.state)) return PilotReply.ops('impossível na fase atual');
     if (DATA.RWY_PAIR[rwy] === DATA.RWY_PAIR[this.rwy] && this.state === 'holdshort' && rwy === this.rwy)
-      return { err: 'já estamos no ponto de espera da ' + rwy };
+      return PilotReply.ops('já estamos no ponto de espera da ' + rwy);
     this.rwy = rwy;
     this.state = 'taxi';
     this.timer = U.rnd(50, 100);
@@ -288,27 +463,41 @@ class Aircraft {
     return { rb: 'Taxiando para a cabeceira ' + rwy };
   }
 
-  cmdHold(fixName) {
-    if (!this.airborne) return { err: 'ainda no solo' };
-    if (!U.fix(fixName)) return { err: 'fixo desconhecido' };
+  cmdHold(fixName, turn) {
+    if (!this.airborne) return PilotReply.ops('ainda no solo');
+    if (!U.fix(fixName)) return PilotReply.input('Fixo ' + fixName + ' não encontrado');
+    this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
-    this.nav = { mode: 'hold', fix: fixName, resume: this.nav.mode === 'route' ? { route: this.nav.route, idx: this.nav.idx } : null };
-    return { rb: 'Espera sobre ' + fixName };
+    const f = U.fix(fixName);
+    const inboundHdg = Math.round(U.brg(this.x, this.y, f[0], f[1])) || 360;
+    const side = turn === 'L' || turn === 'R' ? turn : Holding.DEFAULTS.turn;
+    const resume = this.nav.mode === 'route' ? { route: this.nav.route, idx: this.nav.idx } : null;
+    this.nav = Holding.create({
+      fix: fixName,
+      inboundHdg,
+      turn: side,
+      entry: 'direct',
+      resume,
+    });
+    this.clearPilotAsk();
+    const sideRb = side === 'L' ? ', curvas à esquerda' : '';
+    return { rb: 'Espera sobre ' + fixName + sideRb };
   }
   cmdGoAround() {
-    if (!this.airborne || this.app.phase === 'none') return { err: 'não estamos em aproximação' };
+    if (!this.airborne || this.app.phase === 'none') return PilotReply.ops('não estamos em aproximação');
     this.goAround('instrução do controle');
     return { rb: 'Arremetendo' };
   }
   cmdSid(name) {
     const sid = DATA.SIDS[name];
-    if (!sid) return { err: 'SID desconhecida' };
-    if (this.kind !== 'dep') return { err: 'somos uma chegada, não temos SID' };
+    if (!sid) return PilotReply.input('SID ' + name + ' inexistente');
+    if (this.kind !== 'dep') return PilotReply.ops('somos uma chegada, não temos SID');
     this.sid = name;
     if (this.onGround) return { rb: 'SID ' + name };
     // em voo: reingressa na SID pelo fixo mais próximo
     const join = this.nearestOf(sid.route);
+    this.clearHover();
     this.cancelApproach();
     this.sidEngaged = true;
     this.nav = { mode: 'route', route: sid.route.slice(sid.route.indexOf(join)), idx: 0 };
@@ -316,11 +505,12 @@ class Aircraft {
   }
   cmdStar(name) {
     const star = DATA.STARS[name];
-    if (!star) return { err: 'STAR desconhecida' };
-    if (this.kind !== 'arr') return { err: 'somos uma saída, não temos STAR' };
-    if (!this.airborne) return { err: 'ainda no solo' };
+    if (!star) return PilotReply.input('STAR ' + name + ' inexistente');
+    if (this.kind !== 'arr') return PilotReply.ops('somos uma saída, não temos STAR');
+    if (!this.airborne) return PilotReply.ops('ainda no solo');
     const fixes = star.route.map(r => r.fix);
     const join = this.nearestOf(fixes);
+    this.clearHover();
     this.cancelApproach();
     this.star = name;
     this.via = false;
@@ -329,30 +519,33 @@ class Aircraft {
   }
   // autorização de cruzamento da zona do aeródromo (helicópteros VFR)
   cmdCross() {
-    if (this.kind !== 'hel') return { err: 'não somos tráfego de cruzamento' };
-    if (this.crossCleared) return { err: 'já autorizados a cruzar' };
+    if (this.kind !== 'hel') return PilotReply.ops('não somos tráfego de cruzamento');
+    if (this.crossCleared) return PilotReply.ops('já autorizados a cruzar');
+    this.clearHover();
     this.crossCleared = true;
     this.heliAuto = true;
     if (this.heliState === 'waiting') this.heliState = 'crossing';
+    this.clearPilotAsk();
     return { rb: 'Autorizado cruzamento da zona do aeródromo, prosseguindo' };
   }
 
   // transferência para o Centro (apenas saídas, perto do fim da SID e alto)
   cmdHandoff(game) {
-    if (this.kind === 'arr') return { err: 'somos uma chegada — seguimos com você até o pouso' };
-    if (!this.airborne) return { err: 'ainda no solo' };
+    if (this.kind === 'arr') return PilotReply.ops('somos uma chegada — seguimos com você até o pouso');
+    if (!this.airborne) return PilotReply.ops('ainda no solo');
     const exitFix = DATA.SIDS[this.sid] && DATA.SIDS[this.sid].exit;
     const d = U.dist(0, 0, this.x, this.y);
     const nearExit = (exitFix && this.fixDist(exitFix) < 12) || d > DATA.AIRPORT.range * 0.6;
-    if (!nearExit) return { err: 'ainda não completamos a saída — cedo demais para o Centro', early: true };
-    if (this.alt < 9000) return { err: 'ainda abaixo de 9.000 pés — cedo demais para o Centro', early: true };
+    if (!nearExit) return PilotReply.ops('ainda não completamos a saída — cedo demais para o Centro', { early: true });
+    if (this.alt < 9000) return PilotReply.ops('ainda abaixo de 9.000 pés — cedo demais para o Centro', { early: true });
     this.handedOff = true;
+    this.clearPilotAsk();
     if (game) game.completeHandoff(this, true);
     return { rb: 'Com o Centro, obrigado, até logo' };
   }
   // instrução condicional: executa após passar um fixo e/ou após N milhas
   addPending(cond) {
-    if (this.pending.length >= 3) return { err: 'já temos três instruções condicionais pendentes' };
+    if (this.pending.length >= 3) return PilotReply.ops('já temos três instruções condicionais pendentes');
     const p = {
       fix: cond.fix || null,
       dist: cond.dist ?? null,
@@ -371,7 +564,7 @@ class Aircraft {
     // condicional LATERAL dado antes da decolagem: mantém a proa de pista até
     // disparar (a instrução do controle substitui a navegação da SID)
     let extra = '';
-    const LATERAL = ['P', 'PROA', 'H', 'HDG', 'PE', 'PD', 'HL', 'HR', 'DIR', 'DCT', 'DIRETO'];
+    const LATERAL = ['P', 'PROA', 'H', 'HDG', 'PE', 'PD', 'HL', 'HR', 'DIR', 'DCT', 'DIRETO', 'DIRECT'];
     if (this.kind === 'dep' && this.onGround && LATERAL.includes(p.tokens[0])) {
       this.holdRwyHdg = true;
       extra = ', mantendo a proa de pista até lá';
@@ -395,7 +588,7 @@ class Aircraft {
   }
 
   addReport(cond) {
-    if (this.reports.length >= 3) return { err: 'já temos três reportes pendentes' };
+    if (this.reports.length >= 3) return PilotReply.ops('já temos três reportes pendentes');
     const r = Object.assign({}, cond);
     if (r.kind === 'dist') {
       r.label = `reporte ${r.dist} NM do aeródromo`;
@@ -419,7 +612,7 @@ class Aircraft {
       this.reports.push(r);
       return { rb: 'Reportaremos ' + phrase + altText };
     }
-    return { err: 'tipo de reporte inválido' };
+    return PilotReply.input('tipo de reporte inválido');
   }
 
   reportText(r, game) {
@@ -588,12 +781,13 @@ class Aircraft {
     }
 
     if (this.state === 'abort') {
-      // frenagem máxima na pista, depois taxia de volta ao ponto de espera
+      // frenagem máxima na pista; só sai com autorização (LIVRAR)
       this.spd = Math.max(0, this.spd - 4.5 * dt * 9);
       this.moveStraight(dt);
-      if (this.spd <= 20) {
+      if (this.spd <= 20 && this.vacateClr) {
         this.state = 'taxi';
         this.timer = U.rnd(60, 110);
+        this.vacateClr = false;
         // zera a referência das condicionais por distância (nova corrida)
         for (const p of this.pending) if (!p.fix && p.alt === null) p.origin = null;
         game.radioPilot(this, 'decolagem abortada, livrando a pista e taxiando de volta à cabeceira', 1);
@@ -604,10 +798,12 @@ class Aircraft {
     if (this.state === 'rollout') {
       this.spd = Math.max(0, this.spd - 3.5 * dt * 9);
       this.moveStraight(dt);
-      if (this.spd <= 25) {
+      if (this.spd <= 25 && this.vacateClr) {
         this.timer -= dt;
         if (this.timer <= 0) {
           this.state = 'done';
+          this.vacateClr = false;
+          game.radioPilot(this, 'pista livre, obrigado, bom serviço', 0.3);
           if (game.onRunwayVacated) game.onRunwayVacated(this);
         }
       }
@@ -618,31 +814,40 @@ class Aircraft {
     this.checkPending(game);
     this.checkReports(game);
     if (this.kind === 'hel') this.updateHeli(dt, game);
-    // saída aos 900 ft: aplica a instrução lateral dada antes da decolagem.
-    // Sem instrução (DEC simples), MANTÉM A PROA DE PISTA aguardando o
-    // controle — a SID só é seguida com "subir via SID" (VIA) ou vetores.
-    if (this.kind === 'dep' && !this.sidEngaged && this.alt > 900) {
-      this.sidEngaged = true;
-      if (this.depHdg != null) {
-        this.nav = { mode: 'hdg', hdg: this.depHdg, turn: null };
-      } else if (this.depDct) {
-        // direto dado antes da decolagem; se o fixo pertence à SID, retoma a carta
-        const sid = this.sid && DATA.SIDS[this.sid];
-        let route = [this.depDct];
-        if (sid) {
-          const i = sid.route.indexOf(this.depDct);
-          if (i >= 0) route = sid.route.slice(i);
+
+    // Hover ATC: estacionário no ar (só heli); altitude ainda responde a A/SUBA/DESCA
+    if (this.hovering) {
+      this.updateVertical(dt);
+      this.updateSpeed(dt);
+      if (this.hoverPos) { this.x = this.hoverPos[0]; this.y = this.hoverPos[1]; }
+      if (this.hoverHdg != null) this.hdg = this.hoverHdg;
+    } else {
+      // saída aos 900 ft: aplica a instrução lateral dada antes da decolagem.
+      // Sem instrução (DEC simples), MANTÉM A PROA DE PISTA aguardando o
+      // controle — a SID só é seguida com "subir via SID" (VIA) ou vetores.
+      if (this.kind === 'dep' && !this.sidEngaged && this.alt > 900) {
+        this.sidEngaged = true;
+        if (this.depHdg != null) {
+          this.nav = { mode: 'hdg', hdg: this.depHdg, turn: null };
+        } else if (this.depDct) {
+          // direto dado antes da decolagem; se o fixo pertence à SID, retoma a carta
+          const sid = this.sid && DATA.SIDS[this.sid];
+          let route = [this.depDct];
+          if (sid) {
+            const i = sid.route.indexOf(this.depDct);
+            if (i >= 0) route = sid.route.slice(i);
+          }
+          this.nav = { mode: 'route', route, idx: 0 };
+        } else if (this.depViaSid && this.sid && DATA.SIDS[this.sid]) {
+          this.nav = { mode: 'route', route: DATA.SIDS[this.sid].route.slice(), idx: 0 };
         }
-        this.nav = { mode: 'route', route, idx: 0 };
-      } else if (this.depViaSid && this.sid && DATA.SIDS[this.sid]) {
-        this.nav = { mode: 'route', route: DATA.SIDS[this.sid].route.slice(), idx: 0 };
+        // senão: segue na proa de pista (nav já é a proa da decolagem)
       }
-      // senão: segue na proa de pista (nav já é a proa da decolagem)
+      this.updateLateral(dt, game);
+      this.updateVertical(dt);
+      this.updateSpeed(dt);
+      this.moveStraight(dt);
     }
-    this.updateLateral(dt, game);
-    this.updateVertical(dt);
-    this.updateSpeed(dt);
-    this.moveStraight(dt);
 
     // trilha do radar
     this.trailT += dt;
@@ -772,15 +977,7 @@ class Aircraft {
       }
       this.turnToward(U.brg(this.x, this.y, f[0], f[1]), dt);
     } else if (this.nav.mode === 'hold') {
-      const f = U.fix(this.nav.fix);
-      const d = U.dist(this.x, this.y, f[0], f[1]);
-      const R = 2.2;
-      if (d > R + 1.5) this.turnToward(U.brg(this.x, this.y, f[0], f[1]), dt);
-      else {
-        // órbita à direita: proa tangente
-        const brgFromFix = U.brg(f[0], f[1], this.x, this.y);
-        this.turnToward(U.norm360(brgFromFix + (d < R ? 100 : 80)), dt, 'R');
-      }
+      Holding.update(this, dt);
     }
   }
 
@@ -832,7 +1029,7 @@ class Aircraft {
     if (this.spdMode === 'max') target = perf.max;
     // helicóptero sem autorização: reduz chegando perto da zona e paira no limite
     if (this.kind === 'hel' && this.heliAuto && !this.crossCleared) {
-      if (this.heliState === 'waiting') target = 0;
+      if (this.hovering || this.heliState === 'waiting') target = 0;
       else if (this.heliState === 'inbound' && U.dist(0, 0, this.x, this.y) < 8) target = Math.min(target, 60);
     }
     // regra dos 250 kt abaixo de 10.000 ft
@@ -850,14 +1047,18 @@ class Aircraft {
       else if (dist < 9) target = Math.min(target, 180);
     }
     target = Math.max(target, this.minSpdNow());
-    const acc = perf.accel * (target < this.spd ? 0.8 : 1);
+    // hover ATC: força parado (independente de clrSpd / heliAuto)
+    if (this.hovering) target = 0;
+    const acc = this.hovering
+      ? Math.max(perf.accel * 5, 12) // estabiliza o pairado em poucos segundos
+      : perf.accel * (target < this.spd ? 0.8 : 1);
     if (Math.abs(target - this.spd) < acc * dt) this.spd = target;
     else this.spd += Math.sign(target - this.spd) * acc * dt;
   }
 
   minSpdNow() {
     const perf = this.effectivePerf();
-    if (this.perf.heli) return this.heliState === 'waiting' ? 0 : 40;
+    if (this.perf.heli) return (this.hovering || this.heliState === 'waiting') ? 0 : 40;
     if (this.app.phase === 'gs') return perf.app;
     if (this.alt < 6000) return perf.min + 25;
     return perf.min + 45;
@@ -873,4 +1074,4 @@ class Aircraft {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { Aircraft };
+if (typeof module !== 'undefined') module.exports = { Aircraft, PilotReply };

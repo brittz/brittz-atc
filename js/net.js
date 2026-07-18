@@ -216,12 +216,12 @@ const Net = {
         break;
 
       case 'radio':
-        if (msg.who === 'atc') UI.logATC(msg.text);
+        if (msg.who === 'atc') UI.logATC(msg.text, { cs: msg.cs, radio: msg.radio });
         else if (msg.who === 'pilot') {
           const ac = this.aircraft.find(a => a.cs === msg.cs);
           if (ac) UI.logPilot(ac, msg.text);
           // aeronave ainda não veio num snapshot (ex.: check-in): piloto "provisório"
-          else if (msg.cs) UI.logPilot({ cs: msg.cs, radio: msg.cs, emergency: false }, msg.text);
+          else if (msg.cs) UI.logPilot({ cs: msg.cs, radio: msg.radio || msg.cs, emergency: false }, msg.text);
           else UI.logSys(msg.text, msg.cls || '');
         } else UI.logSys(msg.text, msg.cls || '');
         break;

@@ -27,7 +27,7 @@ async function loadVersionInfo() {
 function handleEmit(ev) {
   switch (ev.type) {
     case 'radio':
-      if (ev.who === 'atc') UI.logATC(ev.text);
+      if (ev.who === 'atc') UI.logATC(ev.text, { cs: ev.cs, radio: ev.radio || (ev.ac && ev.ac.radio) });
       else if (ev.who === 'pilot') UI.logPilot(ev.ac, ev.text);
       else UI.logSys(ev.text, ev.cls || '');
       break;

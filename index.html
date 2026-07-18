@@ -71,7 +71,7 @@
         placeholder="Ex.: TAM3412 A 6000 V 220 · ILS 09L · AP · DEC 09R">
       <button id="btnSend" title="Transmitir (Enter)">📡</button>
     </div>
-    <div id="cmdHint">A alt · V vel · P proa/fixo · DIR fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · APOS fixo/NM cmd · pt/en natural: CLIMB, DESCEND, DIRECT, CLEARED TO LAND/TAKEOFF · NATURE · SOULS · FUEL · INTENTIONS</div>
+    <div id="cmdHint">A alt · V vel · P proa/fixo · DCT fixo · ESPERA/HOLD fixo · VIA · STAR/SID · ILS · AP · ALINHAR · DEC · LIVRAR · AGUARDE · PREVISAO · HOVER · CRZ · APOS fixo/NM cmd · pt/en natural: CLIMB, DESCEND, DIRECT, CLEARED TO LAND/TAKEOFF · NATURE · SOULS · FUEL · INTENTIONS</div>
   </div>
 
   <div id="sidebar">
@@ -221,21 +221,26 @@
       <tr><td><code>A 6000</code> / <code>A FL120</code><br><code>SUBA FL170</code> / <code>CLIMB TO FL170</code></td><td>Suba/desça para altitude ou nível. O parser também aceita fraseologia natural em português e inglês</td></tr>
       <tr><td><code>V 220</code> / <code>V LIVRE</code><br><code>MANTENHA VELOCIDADE 220</code> / <code>SPEED 220</code></td><td>Velocidade (abaixo de 10.000 ft o piloto limita a 250 kt)</td></tr>
       <tr><td><code>P 270</code> · <code>PE 180</code> · <code>PD 360</code><br><code>MANTENHA PROA 270</code> / <code>HEADING 270</code></td><td>Proa (PE/PD força curva à esquerda/direita)</td></tr>
-      <tr><td><code>P TOLDO</code><br><code>DIR GOMES</code> / <code>DIRECT GOMES</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele) ou direto ao fixo</td></tr>
+      <tr><td><code>P TOLDO</code><br><code>DCT GOMES</code> / <code>DIRECT GOMES</code></td><td>Proa em direção ao fixo (vetor, sem navegar até ele) ou direto ao fixo</td></tr>
       <tr><td><code>APOS GOMES 5 A 5000</code></td><td>Instrução condicional: 5 NM após GOMES, desça 5.000 (aceita fixo, distância ou altitude; o resto da linha é a instrução; aliases <code>APÓS</code>/<code>AFTER</code>)</td></tr>
-      <tr><td><code>APOS 5000 DIR GOMES</code> · <code>APOS FL80 V 280</code><br><code>AO ATINGIR FL120 REDUZA 250</code><br><code>DEIXANDO 5000 DIRETO GOMES</code><br><code>NIVELADO FL080 V MIN</code></td><td>Condicional por altitude: número ≥ 400 é pés, &lt; 400 é NM; também aceita formas naturais como “ao atingir”, “deixando” e “nivelado”</td></tr>
+      <tr><td><code>APOS 5000 DCT GOMES</code> · <code>APOS FL80 V 280</code><br><code>AO ATINGIR FL120 REDUZA 250</code><br><code>DEIXANDO 5000 DIRETO GOMES</code><br><code>NIVELADO FL080 V MIN</code></td><td>Condicional por altitude: número ≥ 400 é pés, &lt; 400 é NM; também aceita formas naturais como “ao atingir”, “deixando” e “nivelado”</td></tr>
       <tr><td><code>V MIN</code> / <code>V MAX</code></td><td>Mínima/máxima operacional — o valor exato fica a critério do comandante (flape, peso, fase do voo)</td></tr>
-      <tr><td><code>ABORTAR</code> / <code>RTO</code></td><td>Aborta a decolagem em rolagem (antes de V1) ou abandona a pista se alinhado; a aeronave taxia de volta à cabeceira</td></tr>
+      <tr><td><code>ABORTAR</code> / <code>RTO</code></td><td>Aborta a decolagem em rolagem (antes de V1); a aeronave freia na pista e aguarda <code>LIVRAR</code> para sair. Alinhada sem rolagem: equivale a livrar a pista</td></tr>
+      <tr><td><code>LIVRAR</code> / <code>LIVRAR L</code> · <code>LIVRAR R</code><br><code>LIVRE A PISTA</code> / <code>VACATE RUNWAY</code><br><code>VACATE WHEN ABLE</code></td><td>Autoriza livrar a pista (após pouso, RTO ou alinhada). Lados e “quando possível” são aceitos; a saída concreta fica a cargo da aeronave</td></tr>
+      <tr><td><code>AGUARDE</code> / <code>STANDBY</code><br><code>AGUARDE TRAFFIC</code> · <code>AGUARDE EMERGENCY</code><br><code>STAND BY DUE TRAFFIC</code></td><td>Manda o piloto aguardar (tráfego, emergência ou instruções). A IA deixa de repetir a mesma solicitação por um intervalo</td></tr>
+      <tr><td><code>PREVISAO APP</code> / <code>EXPECT APPROACH</code><br><code>POUSO EM BREVE</code> · <code>AUTORIZACAO EM BREVE</code></td><td>Informa que a autorização virá em breve (aproximação, pouso, decolagem ou autorização genérica)</td></tr>
       <tr><td><code>TAXI 27L</code></td><td>Taxia uma saída do ponto de espera para outra cabeceira (útil após trocar as pistas em uso); a SID é re-arquivada para o novo fluxo</td></tr>
-      <tr><td><code>CRZ</code> / <code>CRUZAR</code></td><td>Autoriza um helicóptero VFR a cruzar a zona do aeródromo (círculo ATZ de 5 NM); sem autorização ele paira no limite aguardando. Vetores (<code>P</code>/<code>DIR</code>/<code>A</code>) também funcionam</td></tr>
-      <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>). Se a condicional for lateral (<code>DIR</code>/<code>P</code>), a aeronave mantém a proa de pista até disparar, em vez de engatar a SID aos 900 ft</td></tr>
-      <tr><td><code>DIR GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela)</td></tr>
+      <tr><td><code>CRZ</code> / <code>CRUZAR</code></td><td>Autoriza um helicóptero VFR a cruzar a zona do aeródromo (círculo ATZ de 5 NM); sem autorização ele paira no limite aguardando. Vetores (<code>P</code>/<code>DCT</code>/<code>A</code>) também funcionam</td></tr>
+      <tr><td><code>HOVER</code><br><code>MANTENHA POSICAO</code> · <code>PERMANECA PAIRADO</code><br><code>HOLD POSITION</code> / <code>MAINTAIN HOVER</code></td><td>Helicóptero: voo pairado estacionário na posição atual (independente de <code>ESPERA</code>). Só para heli; atalho contextual “Hover”. Qualquer navegação (<code>DCT</code>, <code>P</code>, <code>CRZ</code>, <code>PROSSEGUIR</code>…) encerra o hover</td></tr>
+      <tr><td><code>PROSSEGUIR</code> / <code>CONTINUE</code><br><code>PROSSIGA</code> · <code>CONTINUE NAVIGATION</code></td><td>Helicóptero: cancela o hover e retoma a navegação VFR (em geral rumo ao ponto de saída)</td></tr>
+      <tr><td><code>DEC 09R APOS 5 A FL100</code></td><td>Decola e, 5 NM após a corrida, sobe FL100 (aliases: <code>TAKEOFF</code>, <code>TKFF</code>). Se a condicional for lateral (<code>DCT</code>/<code>P</code>), a aeronave mantém a proa de pista até disparar, em vez de engatar a SID aos 900 ft</td></tr>
+      <tr><td><code>DCT GOMES</code></td><td>Direto ao fixo (retoma a carta se o fixo pertencer a ela). Alias de compatibilidade: <code>DIR</code></td></tr>
       <tr><td><code>VIA</code><br><code>SUBA VIA SID</code> / <code>DESCEND VIA STAR</code></td><td>Chegada: descer via STAR (cumpre as restrições da carta). Saída: <b>subir via SID</b> — segue a navegação da carta e sobe até o teto publicado; combine com a decolagem (<code>DEC 09R VIA</code>) ou com condicional (<code>DEC 09R APOS 5 VIA</code>)</td></tr>
       <tr><td><code>ILS 09L</code><br><code>AUTORIZADO ILS PISTA 09L</code></td><td>Autoriza aproximação ILS (intercepta o localizador e a rampa)</td></tr>
       <tr><td><code>AP</code> / <code>POUSO 09L</code><br><code>CLEARED TO LAND</code></td><td>Autoriza o pouso (obrigatório antes de 1 NM final!)</td></tr>
       <tr><td><code>ALINHAR 09R</code><br><code>ALINHE E AGUARDE PISTA 09R</code></td><td>Alinhar e manter</td></tr>
-      <tr><td><code>DEC 09R</code><br><code>CLEARED FOR TAKEOFF RWY 09R</code></td><td>Autoriza decolagem — a aeronave <b>mantém a proa de pista</b> aguardando instruções (use <code>VIA</code>, <code>P</code> ou <code>DIR</code> para navegar)</td></tr>
-      <tr><td><code>ESPERA NIDOL</code></td><td>Órbita de espera sobre o fixo</td></tr>
+      <tr><td><code>DEC 09R</code><br><code>CLEARED FOR TAKEOFF RWY 09R</code></td><td>Autoriza decolagem — a aeronave <b>mantém a proa de pista</b> aguardando instruções (use <code>VIA</code>, <code>P</code> ou <code>DCT</code> para navegar)</td></tr>
+      <tr><td><code>ESPERA NIDOL</code> / <code>HOLD GOMES</code><br><code>HOLD GOMES LEFT</code> · <code>AGUARDE SOBRE GOMES</code><br><code>ENTRE EM ESPERA SOBRE NIDOL</code> / <code>HOLD OVER GOMES</code></td><td>Espera em circuito racetrack (hipódromo) sobre o fixo — curvas à direita por padrão; <code>LEFT</code>/<code>ESQUERDA</code> para o outro sentido. Substitui a órbita circular. Vetores/<code>DCT</code>/<code>VIA</code>/<code>ILS</code> encerram a espera. Se o fixo não existir: resposta diagnóstica</td></tr>
       <tr><td><code>ARR</code></td><td>Instrução de arremetida / cancela a aproximação</td></tr>
       <tr><td><code>SID CACTO1</code></td><td>Designa/troca a SID (no solo ou reingressa em voo)</td></tr>
       <tr><td><code>STAR PEDRA1</code></td><td>Designa/troca a STAR — a aeronave reingressa pelo fixo mais próximo</td></tr>
@@ -244,12 +249,15 @@
       <tr><td><code>NATURE</code> · <code>SOULS</code> · <code>FUEL</code> · <code>INTENTIONS</code> · <code>RWY</code> · <code>STATUS</code></td><td>Perguntas rápidas da emergência: natureza, pessoas a bordo, combustível, intenções, pista preferida e situação atual. Funcionam pelo rádio normal, somem dos atalhos quando já respondidas e ficam registradas no painel da aeronave</td></tr>
     </table>
     <p>💡 <b>Antes da decolagem</b> você pode dar <code>A 2000</code>, <code>P 120</code> ou
-       <code>DIR FAROL</code>: a aeronave cumpre após decolar (proa/direto substituem a SID aos
+       <code>DCT FAROL</code>: a aeronave cumpre após decolar (proa/direto substituem a SID aos
        900 ft; a altitude dada vale no lugar da subida inicial padrão de 5.000 ft). Ex.:
        <code>TAKEOFF A 2000 DCT FAROL APOS FAROL A 5000</code>. Se uma instrução da linha for
-       recusada, o piloto cumpre as demais e responde "Negativo" só àquela. Com uma aeronave <b>selecionada</b>,
+       recusada, o piloto cumpre as demais e responde só àquela: erros de digitação/entrada
+       (fixo, SID, STAR, pista inexistente) vêm com motivo diagnóstico; limitações
+       operacionais usam fraseologia de piloto (<i>Negativo, já estamos em voo</i>, etc.).
+       Com uma aeronave <b>selecionada</b>,
        uma régua segue o mouse mostrando proa/distância a partir dela; clique/toque num
-       <b>fixo</b> (monta <code>DIR</code>), numa <b>cabeceira</b> (monta <code>ILS</code>/<code>AP</code>/<code>DEC</code>)
+       <b>fixo</b> (monta <code>DCT</code>), numa <b>cabeceira</b> (monta <code>ILS</code>/<code>AP</code>/<code>DEC</code>)
        ou em <b>espaço vazio</b> (monta <code>P proa</code>) e confirme no botão 📡 ou Enter.
        Esc ou ✕ desselecionam. Pinça = zoom, arrastar = mover.</p>
     <p>⚠ Em emergências, o topo mostra o estado operacional do aeroporto (<b>Normal</b>, <b>Emergência</b> ou <b>Recuperação</b>) e a aeronave selecionada ganha atalhos para a entrevista operacional. Reportes futuros e condicionais pendentes aparecem no painel da aeronave.</p>
@@ -266,11 +274,20 @@
     <h3>Fluxo de uma saída</h3>
     <p>Quando o piloto reportar pronto: <code>ALINHAR 09R</code> (opcional) → <code>DEC 09R</code> →
        depois de no ar, <code>A FL150</code> para subir até a transferência automática no limite da TMA.</p>
-    <p class="tiny">O parser aceita sintaxe curta do jogo, abreviações ATC e fraseologia natural em pt-BR/inglês. Teclas: <b>P</b> pausa · <b>Enter</b> transmite · <b>↑/↓</b> histórico · <b>Esc</b> limpa · roda do mouse = zoom · arrastar = mover radar.</p>
+    <p class="tiny">O parser aceita sintaxe curta do jogo, abreviações ATC e fraseologia natural em pt-BR/inglês.
+       No rádio, callsigns comerciais usam o designativo da empresa + números individuais
+       (ex.: <code>GLO1234</code> → “Gol Um Dois Três Quatro”); matrículas usam o alfabeto ICAO
+       (ex.: <code>PT-ABC</code> → “Papa Tango Alpha Bravo Charlie”). Strips e comandos continuam com o código textual.
+       A separação radar (3 NM / 1.000 ft) respeita regras do aeroporto: operações paralelas válidas
+       (aproximações/decolagens independentes) não geram alarme nem penalidade.
+       Teclas: <b>P</b> pausa · <b>Enter</b> transmite · <b>↑/↓</b> histórico · <b>Esc</b> limpa · roda do mouse = zoom · arrastar = mover radar.</p>
   </div>
 </div>
 
 <script src="engine/data.js"></script>
+<script src="engine/radio_phrase.js"></script>
+<script src="engine/separation.js"></script>
+<script src="engine/holding.js"></script>
 <script src="engine/emergency.js"></script>
 <script src="engine/aircraft.js"></script>
 <script src="engine/commands.js"></script>

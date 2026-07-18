@@ -13,10 +13,13 @@ if (typeof DATA === 'undefined' && typeof require !== 'undefined') {
   globalThis.DATA = _d.DATA;
   globalThis.U = _d.U;
 }
+if (typeof PilotReply === 'undefined' && typeof require !== 'undefined') {
+  globalThis.PilotReply = require('./aircraft.js').PilotReply;
+}
 
 const Commands = (() => {
   const WORDS = {
-    optional: new Set(['AUTORIZADO', 'AUTORIZADA', 'CLEARED', 'PARA', 'ATE', 'AT', 'TO', 'FOR', 'NO', 'NA', 'EM', 'THE', 'PLEASE', 'FAVOR', 'CONTINUE', 'CONTINUE']),
+    optional: new Set(['AUTORIZADO', 'AUTORIZADA', 'CLEARED', 'PARA', 'ATE', 'AT', 'TO', 'FOR', 'NO', 'NA', 'EM', 'THE', 'PLEASE', 'FAVOR']),
     optionalJoin: new Set(['E', 'AND']),
     runway: new Set(['RWY', 'RUNWAY', 'PISTA']),
     miles: new Set(['NM', 'NM.', 'MILHA', 'MILHAS', 'MILE', 'MILES']),
@@ -28,7 +31,10 @@ const Commands = (() => {
     speed: new Set(['V', 'VEL', 'SPD', 'SPEED', 'VELOCIDADE']),
     heading: new Set(['P', 'PROA', 'H', 'HDG', 'HEADING']),
     direct: new Set(['DIR', 'DCT', 'DIRETO', 'DIRECT']),
-    proceed: new Set(['PROSSIGA', 'PROCEED', 'VOE', 'FLY']),
+    proceed: new Set(['PROSSIGA', 'PROCEED', 'VOE', 'FLY', 'CONTINUE', 'CONTINUAR', 'PROSSEGUIR']),
+    hover: new Set(['HOVER', 'PAIRADO', 'PAIRE', 'PAIRAR']),
+    hoverPos: new Set(['POSICAO', 'POSITION', 'HOVER', 'PAIRADO']),
+    navResume: new Set(['NAVIGACAO', 'NAVEGACAO', 'NAVIGATION', 'VOO', 'FLIGHT']),
     via: new Set(['VIA']),
     ils: new Set(['ILS']),
     land: new Set(['AP', 'POUSO', 'POUSAR', 'LAND', 'LANDING']),
@@ -36,12 +42,36 @@ const Commands = (() => {
     wait: new Set(['AGUARDE', 'MANTENHA', 'HOLD', 'WAIT']),
     takeoff: new Set(['DEC', 'DECOLAGEM', 'DECOLAR', 'TAKEOFF', 'TKOF', 'TKFF', 'TKOF']),
     hold: new Set(['ESPERA', 'HOLD']),
+    holdOver: new Set(['SOBRE', 'OVER', 'EM', 'NO', 'NA', 'AT']),
+    holdTurnL: new Set(['L', 'LEFT', 'ESQUERDA', 'ESQ']),
+    holdTurnR: new Set(['R', 'RIGHT', 'DIREITA']),
+    holdEnter: new Set(['ENTRE', 'ENTER', 'INGRESSE']),
+    holdingWord: new Set(['ESPERA', 'HOLDING', 'HOLD']),
     goAround: new Set(['ARR', 'GA', 'ARREMETER', 'ARREMETA', 'GOAROUND']),
     sid: new Set(['SID']),
     star: new Set(['STAR']),
     handoff: new Set(['HO', 'TRANSFERIR', 'TRF', 'CENTER', 'CENTRO']),
     abort: new Set(['ABORTAR', 'ABT', 'RTO', 'REJECT']),
     taxi: new Set(['TAXI', 'TAXIAR']),
+    vacate: new Set(['LIVRAR', 'VACATE']),
+    vacatePhrase: new Set(['LIVRE', 'EXIT']),
+    vacateSkip: new Set(['A', 'THE', 'WHEN', 'QUANDO', 'PELA', 'PELO', 'BY', 'VIA']),
+    vacateLeft: new Set(['L', 'LEFT', 'ESQUERDA', 'ESQ']),
+    vacateRight: new Set(['R', 'RIGHT', 'DIREITA']),
+    vacateNext: new Set(['NEXT', 'PROXIMA', 'PROXIMO']),
+    vacateAble: new Set(['ABLE', 'POSSIVEL']),
+    standby: new Set(['AGUARDE', 'STANDBY', 'STBY']),
+    standbyRemain: new Set(['PERMANECA', 'REMAIN', 'FIQUE']),
+    standbyDue: new Set(['DEVIDO', 'DUE']),
+    standbyTraffic: new Set(['TRAFFIC', 'TRAFEGO']),
+    standbyEmerg: new Set(['EMERGENCY', 'EMERGENCIA', 'EMERG']),
+    standbyInstr: new Set(['INSTRUCOES', 'INSTRUCTIONS', 'INSTR']),
+    expect: new Set(['PREVISAO', 'EXPECT', 'EXPECTATIVA']),
+    expectApp: new Set(['APP', 'APROXIMACAO', 'APPROACH']),
+    expectLand: new Set(['LAND', 'POUSO', 'LANDING']),
+    expectTo: new Set(['TO', 'DECOLAGEM', 'TAKEOFF', 'TKOF']),
+    expectClr: new Set(['CLR', 'AUTORIZACAO', 'CLEARANCE', 'CLEAR']),
+    delay: new Set(['ATRASO', 'DELAY']),
     cross: new Set(['CRZ', 'CRUZAR', 'CROSS', 'CRUZAMENTO']),
     report: new Set(['REPORTE', 'REPORTAR', 'REPORT', 'REP']),
     after: new Set(['APOS', 'AFTER']),
@@ -69,10 +99,13 @@ const Commands = (() => {
   const KNOWN = new Set([
     'A','ALT','D','S','DESCER','SUBIR','V','VEL','SPD',
     'P','PROA','H','HDG','PE','PD','HL','HR',
-    'DIR','DCT','DIRETO','VIA','ILS','AP','POUSO','CTL',
+    'DIR','DCT','DIRETO','DIRECT','VIA','ILS','AP','POUSO','CTL',
     'ALINHAR','LU','DEC','TO','CTO','DECOLAR','TAKEOFF','TKFF','TKOF',
     'ESPERA','HOLD','ARR','GA','ARREMETER','SID','STAR','HO','TRANSFERIR','TRF',
-    'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR','CRZ','CRUZAR','CROSS','CRUZAMENTO',
+    'ABORTAR','ABT','RTO','REJECT','TAXI','TAXIAR','LIVRAR','VACATE',
+    'AGUARDE','STANDBY','STBY','PREVISAO','EXPECT','ATRASO','DELAY',
+    'HOVER','PAIRADO','PAIRE','PAIRAR','PROSSEGUIR','CONTINUAR','CONTINUE',
+    'CRZ','CRUZAR','CROSS','CRUZAMENTO',
     'REPORTE','REPORTAR','REPORT','REP',
     'NATURE','NATUREZA','NAT','SOULS','POB','FUEL','COMB','COMBUSTIVEL','COMBUSTÍVEL',
     'INTENTIONS','INTENCOES','INTENÇÕES','INTENT','RWY','RUNWAY','PISTA','STATUS','EMERG','EMERGENCIA','EMERGÊNCIA',
@@ -124,9 +157,15 @@ const Commands = (() => {
     return { token: fallback || null, next: i };
   }
 
-  function parseFixPhrase(tokens, i) {
+  function parseFixPhrase(tokens, i, loose) {
     const j = nextMeaningful(tokens, i);
-    if (tokens[j] && U.fix(tokens[j])) return { token: tokens[j], next: j + 1 };
+    if (!tokens[j]) return null;
+    if (U.fix(tokens[j])) return { token: tokens[j], next: j + 1 };
+    // aceita nome “parecido com fixo” mesmo inexistente → diagnóstico no cmdHold/cmdDirect
+    if (loose && /^[A-Z][A-Z0-9]{1,7}$/.test(tokens[j])
+      && !KNOWN.has(tokens[j]) && !DATA.RUNWAYS[tokens[j]]
+      && !inSet(tokens[j], WORDS.runway) && !inSet(tokens[j], WORDS.optional))
+      return { token: tokens[j], next: j + 1 };
     return null;
   }
 
@@ -142,6 +181,135 @@ const Commands = (() => {
       if (inSet(tokens[j], WORDS.knots)) j++;
       return { token: String(num), next: j };
     }
+    return null;
+  }
+
+  // Frases de hover → HOVER (antes de HOLD/MANTENHA/PERMANECA)
+  function tryParseHover(tokens, i) {
+    const t = tokens[i];
+    if (!t) return null;
+
+    if (inSet(t, WORDS.hover)) {
+      let j = i + 1;
+      while (j < tokens.length && (
+        tokens[j] === 'NESTA' || tokens[j] === 'THIS' || tokens[j] === 'IN' || tokens[j] === 'AQUI'
+        || inSet(tokens[j], WORDS.hoverPos) || inSet(tokens[j], WORDS.optional)
+      )) j++;
+      return { next: j };
+    }
+
+    // HOLD POSITION — no ar, para heli; não confundir com ESPERA sobre fixo
+    if (t === 'HOLD' && (tokens[i + 1] === 'POSITION' || tokens[i + 1] === 'POSICAO'))
+      return { next: i + 2 };
+
+    if (inSet(t, WORDS.maintain)) {
+      const j = nextMeaningful(tokens, i + 1);
+      if (tokens[j] === 'HOVER' || tokens[j] === 'PAIRADO'
+        || tokens[j] === 'POSICAO' || tokens[j] === 'POSITION')
+        return { next: j + 1 };
+    }
+
+    if (t === 'REMAIN' || t === 'PERMANECA') {
+      let j = nextMeaningful(tokens, i + 1);
+      while (j < tokens.length && (tokens[j] === 'IN' || tokens[j] === 'EM'
+        || tokens[j] === 'NESTA' || inSet(tokens[j], WORDS.optional)))
+        j = nextMeaningful(tokens, j + 1);
+      if (tokens[j] === 'HOVER' || tokens[j] === 'PAIRADO'
+        || tokens[j] === 'POSICAO' || tokens[j] === 'POSITION')
+        return { next: j + 1 };
+    }
+
+    return null;
+  }
+
+  function holdTurnOf(tok) {
+    if (inSet(tok, WORDS.holdTurnL)) return 'L';
+    if (inSet(tok, WORDS.holdTurnR)) return 'R';
+    return null;
+  }
+
+  // Frases naturais de espera → ESPERA FIX [L|R]
+  function tryParseHold(tokens, i) {
+    const t = tokens[i];
+    if (!t) return null;
+
+    // ENTRE EM ESPERA [SOBRE] FIX [LEFT|RIGHT]
+    if (inSet(t, WORDS.holdEnter)) {
+      let j = i + 1;
+      if (tokens[j] === 'EM' || tokens[j] === 'IN') j++;
+      if (!inSet(tokens[j], WORDS.holdingWord)) return null;
+      j++;
+      while (j < tokens.length && inSet(tokens[j], WORDS.holdOver)) j++;
+      let turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const fix = parseFixPhrase(tokens, j, true);
+      if (!fix) return null;
+      j = fix.next;
+      if (!turn) turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const out = ['ESPERA', fix.token];
+      if (turn) out.push(turn);
+      return { tokens: out, next: j };
+    }
+
+    // MANTENHA ESPERA [EM/SOBRE] FIX
+    if (inSet(t, WORDS.maintain)) {
+      const j0 = nextMeaningful(tokens, i + 1);
+      if (!inSet(tokens[j0], WORDS.holdingWord)) return null;
+      let j = j0 + 1;
+      while (j < tokens.length && inSet(tokens[j], WORDS.holdOver)) j++;
+      let turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const fix = parseFixPhrase(tokens, j, true);
+      if (!fix) return null;
+      j = fix.next;
+      if (!turn) turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const out = ['ESPERA', fix.token];
+      if (turn) out.push(turn);
+      return { tokens: out, next: j };
+    }
+
+    // AGUARDE SOBRE FIX / STANDBY OVER FIX (não é stand-by de rádio)
+    if (inSet(t, WORDS.standby) || t === 'AGUARDE') {
+      let j = i + 1;
+      if (!inSet(tokens[j], WORDS.holdOver)) return null;
+      // "AGUARDE SOBRE" exige fixo; senão deixa o handler de standby
+      while (j < tokens.length && inSet(tokens[j], WORDS.holdOver)) j++;
+      let turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const fix = parseFixPhrase(tokens, j, true);
+      if (!fix) return null;
+      j = fix.next;
+      if (!turn) turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const out = ['ESPERA', fix.token];
+      if (turn) out.push(turn);
+      return { tokens: out, next: j };
+    }
+
+    // HOLD / ESPERA [OVER|SOBRE] [LEFT|RIGHT] FIX [LEFT|RIGHT]
+    if (inSet(t, WORDS.hold)) {
+      // HOLD POSITION já foi tratado em tryParseHover
+      if (tokens[i + 1] === 'POSITION' || tokens[i + 1] === 'POSICAO') return null;
+      let j = i + 1;
+      while (j < tokens.length && inSet(tokens[j], WORDS.holdOver)) j++;
+      let turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      while (j < tokens.length && inSet(tokens[j], WORDS.holdOver)) j++;
+      const fix = parseFixPhrase(tokens, j, true);
+      if (!fix) {
+        // HOLD sem fixo: deixa cair no handler canônico (erro)
+        return null;
+      }
+      j = fix.next;
+      if (!turn) turn = holdTurnOf(tokens[j]);
+      if (turn) j++;
+      const out = ['ESPERA', fix.token];
+      if (turn) out.push(turn);
+      return { tokens: out, next: j };
+    }
+
     return null;
   }
 
@@ -211,6 +379,29 @@ const Commands = (() => {
 
       if (inSet(t, WORDS.optional) || inSet(t, WORDS.optionalJoin)) { i++; continue; }
 
+      // Hover (heli) — antes de MANTENHA/HOLD/PERMANECA (ambiguidade com solo/espera)
+      {
+        const hv = tryParseHover(tokens, i);
+        if (hv) { out.push('HOVER'); i = hv.next; continue; }
+      }
+
+      // Espera racetrack — antes de MANTENHA/AGUARDE genéricos
+      {
+        const hd = tryParseHold(tokens, i);
+        if (hd) { out.push(...hd.tokens); i = hd.next; continue; }
+      }
+
+      // "aproximação/pouso/decolagem/autorização em breve"
+      if ((tokens[i + 1] === 'EM' || tokens[i + 1] === 'IN')
+        && (tokens[i + 2] === 'BREVE' || tokens[i + 2] === 'BRIEF' || tokens[i + 2] === 'SHORTLY')) {
+        let what = null;
+        if (inSet(t, WORDS.expectApp) || t === 'APROXIMACAO') what = 'APP';
+        else if (inSet(t, WORDS.expectLand) || t === 'POUSO') what = 'LAND';
+        else if (inSet(t, WORDS.expectTo) || t === 'DECOLAGEM') what = 'TO';
+        else if (inSet(t, WORDS.expectClr) || t === 'AUTORIZACAO') what = 'CLR';
+        if (what) { out.push('PREVISAO', what); i += 3; continue; }
+      }
+
       if (inSet(t, WORDS.maintain)) {
         const j = nextMeaningful(tokens, i + 1);
         if (inSet(tokens[j], WORDS.heading) || /^\d{1,3}$/.test(tokens[j] || '')) {
@@ -270,16 +461,23 @@ const Commands = (() => {
       if (inSet(t, WORDS.proceed)) {
         const j = nextMeaningful(tokens, i + 1);
         if (inSet(tokens[j], WORDS.direct)) {
-          const fix = parseFixPhrase(tokens, j + 1);
-          if (fix) { out.push('DIR', fix.token); i = fix.next; continue; }
+          const fix = parseFixPhrase(tokens, j + 1, true);
+          if (fix) { out.push('DCT', fix.token); i = fix.next; continue; }
         }
-        const fix = parseFixPhrase(tokens, i + 1);
-        if (fix) { out.push('DIR', fix.token); i = fix.next; continue; }
+        const fix = parseFixPhrase(tokens, i + 1, true);
+        if (fix) { out.push('DCT', fix.token); i = fix.next; continue; }
+        // bare PROSSIGA / CONTINUE [navegação] — retoma após hover
+        if (!tokens[j] || inSet(tokens[j], WORDS.navResume) || inSet(tokens[j], WORDS.optional)) {
+          out.push('PROSSEGUIR');
+          i = tokens[j] && (inSet(tokens[j], WORDS.navResume) || inSet(tokens[j], WORDS.optional))
+            ? j + 1 : i + 1;
+          continue;
+        }
       }
 
       if (inSet(t, WORDS.direct)) {
-        const fix = parseFixPhrase(tokens, i + 1);
-        if (fix) { out.push('DIR', fix.token); i = fix.next; continue; }
+        const fix = parseFixPhrase(tokens, i + 1, true);
+        if (fix) { out.push('DCT', fix.token); i = fix.next; continue; }
       }
 
       if (inSet(t, WORDS.via)) {
@@ -323,10 +521,9 @@ const Commands = (() => {
       }
 
       if (inSet(t, WORDS.hold)) {
-        const fix = parseFixPhrase(tokens, i + 1);
+        // fallback se tryParseHold não engatou (ex.: HOLD sem fixo)
         out.push('ESPERA');
-        if (fix) out.push(fix.token);
-        i = fix ? fix.next : i + 1;
+        i++;
         continue;
       }
 
@@ -347,6 +544,73 @@ const Commands = (() => {
       }
       if (inSet(t, WORDS.handoff)) { out.push('HO'); i++; continue; }
       if (inSet(t, WORDS.abort)) { out.push('ABORTAR'); i++; continue; }
+
+      // STAND BY (duas palavras) / AGUARDE / REMAIN THIS FREQUENCY / ATRASO DEVIDO…
+      if (t === 'STAND' && tokens[i + 1] === 'BY') {
+        let j = i + 2;
+        while (j < tokens.length && (inSet(tokens[j], WORDS.optional) || tokens[j] === 'FOR'
+          || inSet(tokens[j], WORDS.standbyDue) || tokens[j] === 'THIS' || tokens[j] === 'FREQUENCY'
+          || tokens[j] === 'FREQ')) j++;
+        let reason = null;
+        if (inSet(tokens[j], WORDS.standbyTraffic)) { reason = 'TRAFFIC'; j++; }
+        else if (inSet(tokens[j], WORDS.standbyEmerg)) { reason = 'EMERGENCY'; j++; }
+        else if (inSet(tokens[j], WORDS.standbyInstr)) { reason = 'INSTR'; j++; }
+        out.push('AGUARDE');
+        if (reason) out.push(reason);
+        i = j;
+        continue;
+      }
+      if (inSet(t, WORDS.standby) || inSet(t, WORDS.standbyRemain) || inSet(t, WORDS.delay)) {
+        let j = i + 1;
+        while (j < tokens.length && (inSet(tokens[j], WORDS.optional) || inSet(tokens[j], WORDS.standbyDue)
+          || tokens[j] === 'THIS' || tokens[j] === 'FREQUENCY' || tokens[j] === 'FREQ'
+          || tokens[j] === 'EM' || tokens[j] === 'NA' || tokens[j] === 'ESCUTA')) j++;
+        let reason = null;
+        if (inSet(tokens[j], WORDS.standbyTraffic)) { reason = 'TRAFFIC'; j++; }
+        else if (inSet(tokens[j], WORDS.standbyEmerg)) { reason = 'EMERGENCY'; j++; }
+        else if (inSet(tokens[j], WORDS.standbyInstr)) { reason = 'INSTR'; j++; }
+        out.push('AGUARDE');
+        if (reason) out.push(reason);
+        i = j;
+        continue;
+      }
+
+      if (inSet(t, WORDS.expect)) {
+        let j = i + 1;
+        while (j < tokens.length && (inSet(tokens[j], WORDS.optional) || tokens[j] === 'PARA')) j++;
+        let what = 'CLR';
+        if (inSet(tokens[j], WORDS.expectApp)) { what = 'APP'; j++; }
+        else if (inSet(tokens[j], WORDS.expectLand)) { what = 'LAND'; j++; }
+        else if (inSet(tokens[j], WORDS.expectTo)) { what = 'TO'; j++; }
+        else if (inSet(tokens[j], WORDS.expectClr)) { what = 'CLR'; j++; }
+        out.push('PREVISAO', what);
+        i = j;
+        continue;
+      }
+
+      if (inSet(t, WORDS.vacate) || inSet(t, WORDS.vacatePhrase)) {
+        let j = i + 1;
+        // LIVRE/EXIT só contam se vier pista/lado (evita conflito com V LIVRE)
+        if (inSet(t, WORDS.vacatePhrase)) {
+          let k = j;
+          while (k < tokens.length && (inSet(tokens[k], WORDS.vacateSkip) || inSet(tokens[k], WORDS.optional))) k++;
+          const peek = tokens[k];
+          const ok = inSet(peek, WORDS.runway) || inSet(peek, WORDS.vacateLeft) || inSet(peek, WORDS.vacateRight)
+            || inSet(peek, WORDS.vacateNext) || inSet(peek, WORDS.vacateAble);
+          if (!ok) { i++; continue; }
+        }
+        while (j < tokens.length && (inSet(tokens[j], WORDS.vacateSkip) || inSet(tokens[j], WORDS.optional)
+          || inSet(tokens[j], WORDS.runway))) j++;
+        let side = null;
+        if (inSet(tokens[j], WORDS.vacateLeft)) { side = 'L'; j++; }
+        else if (inSet(tokens[j], WORDS.vacateRight)) { side = 'R'; j++; }
+        else if (inSet(tokens[j], WORDS.vacateNext)) { side = 'NEXT'; j++; }
+        else if (inSet(tokens[j], WORDS.vacateAble)) { side = 'ABLE'; j++; }
+        out.push('LIVRAR');
+        if (side) out.push(side);
+        i = j;
+        continue;
+      }
 
       if (inSet(t, WORDS.taxi)) {
         const rw = parseRunwayPhrase(tokens, i + 1);
@@ -459,7 +723,7 @@ const Commands = (() => {
       switch (cmd) {
         case 'A': case 'ALT': case 'D': case 'S': case 'DESCER': case 'SUBIR': {
           const alt = parseAlt(arg);
-          if (alt === null) { r = { err: 'altitude inválida' }; used = 1; break; }
+          if (alt === null) { r = PilotReply.input('Nível/altitude solicitado indisponível'); used = 1; break; }
           r = ac.cmdAlt(alt);
           atcParts.push((alt < ac.alt ? 'desça para ' : 'suba para ') + U.fmtAlt(alt));
           break;
@@ -469,7 +733,7 @@ const Commands = (() => {
           if (arg === 'MIN' || arg === 'MINIMA' || arg === 'MÍNIMA') { r = ac.cmdSpd('MIN'); atcParts.push('reduza para a mínima operacional'); break; }
           if (arg === 'MAX' || arg === 'MAXIMA' || arg === 'MÁXIMA') { r = ac.cmdSpd('MAX'); atcParts.push('velocidade máxima'); break; }
           const v = parseInt(arg, 10);
-          if (isNaN(v)) { r = { err: 'velocidade inválida' }; used = 1; break; }
+          if (isNaN(v)) { r = PilotReply.input('Velocidade inválida'); used = 1; break; }
           r = ac.cmdSpd(v);
           atcParts.push((v < ac.spd ? 'reduza ' : 'mantenha ') + v + ' nós');
           break;
@@ -479,15 +743,16 @@ const Commands = (() => {
           let h = null, viaFix = null;
           if (arg && /^\d{1,3}$/.test(arg)) h = parseInt(arg, 10);
           else if (arg && U.fix(arg)) { viaFix = arg; h = Math.round(U.brg(ac.x, ac.y, U.fix(arg)[0], U.fix(arg)[1])); }
-          if (h === null || h < 1 || h > 360) { r = { err: 'proa inválida (número 1–360 ou nome de fixo)' }; used = 1; break; }
+          else if (arg && !/^\d/.test(arg)) { r = PilotReply.input('Fixo ' + arg + ' não encontrado'); break; }
+          if (h === null || h < 1 || h > 360) { r = PilotReply.input('Proa inválida (1–360 ou nome de fixo)'); used = 1; break; }
           r = ac.cmdHdg(h, turn);
           if (!r.err && viaFix) r.rb += ' (' + viaFix + ')';
           atcParts.push((turn === 'L' ? 'curva à esquerda proa ' : turn === 'R' ? 'curva à direita proa ' : 'proa ') +
             U.fmtHdg(h) + (viaFix ? ' (direção ' + viaFix + ')' : ''));
           break;
         }
-        case 'DIR': case 'DCT': case 'DIRETO': {
-          if (!arg) { r = { err: 'informe o fixo' }; used = 1; break; }
+        case 'DIR': case 'DCT': case 'DIRETO': case 'DIRECT': {
+          if (!arg) { r = PilotReply.input('Informe o fixo'); used = 1; break; }
           r = ac.cmdDirect(arg);
           atcParts.push('prossiga direto ' + arg);
           break;
@@ -498,7 +763,7 @@ const Commands = (() => {
           break;
         }
         case 'ILS': {
-          if (!arg) { r = { err: 'informe a pista' }; used = 1; break; }
+          if (!arg) { r = PilotReply.input('Informe a pista'); used = 1; break; }
           r = ac.cmdIls(arg);
           atcParts.push('autorizado aproximação ILS pista ' + arg);
           break;
@@ -521,9 +786,24 @@ const Commands = (() => {
           break;
         }
         case 'ESPERA': case 'HOLD': {
-          if (!arg) { r = { err: 'informe o fixo de espera' }; used = 1; break; }
-          r = ac.cmdHold(arg);
-          if (!r.err) atcParts.push('espera sobre ' + arg);
+          let fix = null;
+          let turn = null;
+          used = 1;
+          if (arg && (arg === 'L' || arg === 'R')) {
+            turn = arg;
+            fix = tokens[i + 2];
+            used = fix ? 3 : 2;
+          } else if (arg) {
+            fix = arg;
+            used = 2;
+            const t2 = tokens[i + 2];
+            if (t2 === 'L' || t2 === 'R') { turn = t2; used = 3; }
+          }
+          if (!fix) { r = PilotReply.input('Informe o fixo de espera'); used = Math.max(used, 1); break; }
+          r = ac.cmdHold(fix, turn);
+          if (!r.err) {
+            atcParts.push('espera sobre ' + fix + (turn === 'L' ? ', curvas à esquerda' : turn === 'R' ? ', curvas à direita' : ''));
+          }
           break;
         }
         case 'ARR': case 'GA': case 'ARREMETER': {
@@ -532,13 +812,13 @@ const Commands = (() => {
           break;
         }
         case 'SID': {
-          if (!arg) { r = { err: 'informe a SID' }; used = 1; break; }
+          if (!arg) { r = PilotReply.input('Informe a SID'); used = 1; break; }
           r = ac.cmdSid(arg);
           if (!r.err) atcParts.push('saída ' + arg);
           break;
         }
         case 'STAR': {
-          if (!arg) { r = { err: 'informe a STAR' }; used = 1; break; }
+          if (!arg) { r = PilotReply.input('Informe a STAR'); used = 1; break; }
           r = ac.cmdStar(arg);
           if (!r.err) atcParts.push('chegada ' + arg);
           break;
@@ -553,8 +833,43 @@ const Commands = (() => {
           if (!r.err) atcParts.push('cancele a decolagem, abandone quando puder');
           break;
         }
+        case 'LIVRAR': case 'VACATE': {
+          const side = (arg === 'L' || arg === 'R' || arg === 'NEXT' || arg === 'ABLE') ? arg : null;
+          used = side ? 2 : 1;
+          r = ac.cmdVacate(side);
+          if (!r.err) {
+            const sideAtc = side === 'L' ? ' à esquerda' : side === 'R' ? ' à direita'
+              : side === 'NEXT' ? ' pela próxima' : side === 'ABLE' ? ' quando possível' : '';
+            atcParts.push('livre a pista' + sideAtc);
+          }
+          break;
+        }
+        case 'AGUARDE': case 'STANDBY': case 'STBY': {
+          const reason = (arg === 'TRAFFIC' || arg === 'EMERGENCY' || arg === 'INSTR') ? arg : null;
+          used = reason ? 2 : 1;
+          r = ac.cmdStandby(reason, game);
+          if (!r.err) {
+            const sideAtc = reason === 'TRAFFIC' ? ' devido ao tráfego'
+              : reason === 'EMERGENCY' ? ' devido à emergência'
+              : reason === 'INSTR' ? ' instruções' : '';
+            atcParts.push('aguarde' + sideAtc);
+          }
+          break;
+        }
+        case 'PREVISAO': case 'EXPECT': {
+          const known = arg === 'APP' || arg === 'LAND' || arg === 'TO' || arg === 'CLR';
+          const what = known ? arg : 'CLR';
+          used = known ? 2 : 1;
+          r = ac.cmdExpect(what, game);
+          if (!r.err) {
+            const label = what === 'APP' ? 'aproximação em breve' : what === 'LAND' ? 'pouso em breve'
+              : what === 'TO' ? 'decolagem em breve' : 'autorização em breve';
+            atcParts.push(label);
+          }
+          break;
+        }
         case 'TAXI': case 'TAXIAR': {
-          if (!arg) { r = { err: 'informe a cabeceira (ex.: TAXI 27L)' }; used = 1; break; }
+          if (!arg) { r = PilotReply.input('Informe a cabeceira (ex.: TAXI 27L)'); used = 1; break; }
           r = ac.cmdTaxi(arg);
           if (!r.err) atcParts.push('taxie para a cabeceira ' + arg);
           break;
@@ -562,6 +877,16 @@ const Commands = (() => {
         case 'CRZ': case 'CRUZAR': case 'CROSS': case 'CRUZAMENTO': {
           r = ac.cmdCross(); used = 1;
           if (!r.err) atcParts.push('autorizado cruzamento da zona do aeródromo, reporte deixando');
+          break;
+        }
+        case 'HOVER': {
+          r = ac.cmdHover(); used = 1;
+          if (!r.err) atcParts.push('mantenha pairado nesta posição');
+          break;
+        }
+        case 'PROSSEGUIR': case 'CONTINUAR': case 'CONTINUE': {
+          r = ac.cmdProceed(); used = 1;
+          if (!r.err) atcParts.push('prossiga');
           break;
         }
         case 'REPORTE': case 'REPORTAR': case 'REPORT': case 'REP': {
@@ -601,11 +926,15 @@ const Commands = (() => {
           break;
         }
         default:
-          r = { err: `comando "${cmd}" desconhecido (veja Ajuda)` };
+          r = PilotReply.input('Comando "' + cmd + '" desconhecido (veja Ajuda)');
           used = 1;
       }
 
       results.push(r);
+      if (r && !r.err && ac.emergency && ac.emergency.active) {
+        ac.emergency.flags = ac.emergency.flags || {};
+        ac.emergency.flags.atcContact = true;
+      }
       i += used;
       // um erro não descarta o resto da linha: o piloto cumpre o que puder
       // e responde "Negativo" ao que não puder

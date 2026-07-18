@@ -45,7 +45,8 @@ Exemplos:
 - A FL170
 - V 220
 - P 270
-- DIR GOMES
+- DCT GOMES
+- DIR GOMES (alias de compatibilidade)
 - ILS 09L
 - AP 09L
 - DEC 09R
@@ -108,8 +109,8 @@ O parser deverá aceitar comandos nos dois idiomas.
 Exemplos equivalentes:
 
 - Direto GOMES
-- DIR GOMES
 - DCT GOMES
+- DIR GOMES (compatibilidade)
 - Direct GOMES
 
 ---

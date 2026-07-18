@@ -40,7 +40,9 @@ Extraído do objeto `game` de js/main.js: TODA a simulação, ZERO DOM/UI.
 class GameCore {
   constructor(airportJson, { cfg, traffic, emit })
   // emit(ev) é chamado para todo efeito não-simulado; ev.type ∈:
-  //  'radio' {who:'atc'|'pilot'|'sys', cs?, text, cls?}
+  //  'radio' {who:'atc'|'pilot'|'sys', cs?, radio?, text, cls?}
+  //    atc: text = corpo da instrução (sem callsign); cs/radio p/ fraseologia no cliente
+  //    pilot: text = readback; cs identifica a aeronave
   //  'score' {delta, why, total}
   //  'banner'{text, cls} · 'chime' {} · 'alarm' {on}
   //  'atis'  {letter, metar}
@@ -88,7 +90,7 @@ Servidor → Cliente:
 {t:'session', code, host, state:'lobby'|'ativa', players:[{nick,pos}], cfg, traffic}
 {t:'start', airport:<JSON completo do aeroporto>, cfg, time}
 {t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, runwayUse, airportState, aircraft:[...]}
-{t:'radio', who, cs?, text, cls?}
+{t:'radio', who, cs?, radio?, text, cls?}
 {t:'chat', from, to?, text}
 {t:'event', kind:'banner'|'chime'|'alarm', ...payload}
 {t:'error', msg}
@@ -100,8 +102,8 @@ maiúsculas. Sessão morre 60 s depois do último jogador sair.
 
 Primeiro token do comando (após callsign) define o domínio:
 - **TWR**: ALINHAR/LU, DEC/TO/CTO/DECOLAR/TAKEOFF/TKFF/TKOF, AP/POUSO/CTL,
-  ABORTAR/ABT/RTO/REJECT, TAXI/TAXIAR, CRZ/CRUZAR/CROSS/CRUZAMENTO, ARR/GA/ARREMETER
-- **APP**: todo o resto (A, V, P, DIR, VIA, ILS, STAR, SID, ESPERA, HO, APOS, REPORTE…)
+  ABORTAR/ABT/RTO/REJECT, LIVRAR/VACATE, TAXI/TAXIAR, CRZ/CRUZAR/CROSS/CRUZAMENTO, ARR/GA/ARREMETER
+- **APP**: todo o resto (A, V, P, DCT, VIA, ILS, STAR, SID, ESPERA, HO, APOS, REPORTE…)
 - **OBS**: nenhum comando; só chat.
 Regra: se a posição dona do comando estiver ocupada por OUTRO jogador, quem não é o
 dono recebe `{t:'error', msg:'instrução da posição TWR/APP'}`. Se a posição está vaga,
@@ -111,7 +113,7 @@ qualquer jogador (não-OBS) pode dar o comando (cobertura).
 
 Whitelist (nada além disso): `cs, radio, type, kind, x, y, alt, spd, hdg, vs, clrAlt,
 clrSpd, spdMode, state, nav, app, landClr, star, sid, dest, rwy, emergency, via, stca,
-goingAround, timer, heliState, heliAuto, crossRequested, crossCleared, wptExit,
+goingAround, timer, vacateClr, vacateSide, pilotAi:{pendingAsk,standbyUntil}, heliState, heliAuto, hovering, hoverPos, hoverHdg, crossRequested, crossCleared, wptExit,
 trail, pending:[{label}], reports:[{label}]`.
 
 `airportState` do snapshot é um objeto leve `{state:'normal'|'emergency'|'recovery',
