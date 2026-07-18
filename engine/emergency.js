@@ -50,6 +50,7 @@ const Emergency = (() => {
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { climbFactor: 0.9 },
+      randomContext: { maxDistAirport: 25, maxAlt: 12000 },
       reviewEvery: [55, 85],
       worsenChance: 0.35,
       worsenTo: 'engine-failure',
@@ -101,6 +102,7 @@ const Emergency = (() => {
       declaration: 'PAN PAN',
       severity: 'high',
       effects: { preferLongRunway: true, approachSpeedAdd: 18, preferredSpeedMinAdd: 12 },
+      randomContext: { arrMaxDistAirport: 18, depMaxDistAirport: 10, depMaxSpawnAge: 180, maxAlt: 12000 },
       reviewEvery: [65, 95],
       worsenChance: 0.08,
       improveChance: 0.04,
@@ -111,6 +113,7 @@ const Emergency = (() => {
       declaration: 'PAN PAN',
       severity: 'medium',
       effects: { approachSpeedAdd: 22, preferredSpeedMinAdd: 15 },
+      randomContext: { arrMaxDistAirport: 24, depMaxDistAirport: 12, depMaxSpawnAge: 210, maxAlt: 14000 },
       reviewEvery: [65, 95],
       worsenChance: 0.08,
       improveChance: 0.05,
@@ -182,6 +185,7 @@ const Emergency = (() => {
       declaration: 'MAYDAY',
       severity: 'high',
       effects: { preferredSpeedMinAdd: 10, preferredSpeedMax: 220 },
+      randomContext: { maxDistAirport: 18, maxAlt: 9000 },
       reviewEvery: [35, 60],
       worsenChance: 0.12,
       improveChance: 0.18,
@@ -292,6 +296,41 @@ const Emergency = (() => {
   function summaryText(emg) {
     if (!emg || !emg.active) return 'sem emergência ativa';
     return emg.title + ' · ' + labelSeverity(emg.severity) + ' · ' + labelStage(emg.stage);
+  }
+
+  function randomContext(ac, game) {
+    return {
+      distAirport: U.dist(0, 0, ac.x || 0, ac.y || 0),
+      alt: ac.alt || 0,
+      kind: ac.kind,
+      spawnAge: game && ac.spawnT != null ? Math.max(0, game.time - ac.spawnT) : Infinity,
+    };
+  }
+
+  function allowsRandom(kind, ac, game) {
+    const profile = getProfile(kind);
+    const ctx = randomContext(ac, game);
+    const rc = profile.randomContext || null;
+    if (!rc) return true;
+    if (rc.kinds && !rc.kinds.includes(ctx.kind)) return false;
+    if (rc.minDistAirport != null && ctx.distAirport < rc.minDistAirport) return false;
+    if (rc.maxDistAirport != null && ctx.distAirport > rc.maxDistAirport) return false;
+    if (rc.minAlt != null && ctx.alt < rc.minAlt) return false;
+    if (rc.maxAlt != null && ctx.alt > rc.maxAlt) return false;
+    if (ctx.kind === 'arr') {
+      if (rc.arrMinDistAirport != null && ctx.distAirport < rc.arrMinDistAirport) return false;
+      if (rc.arrMaxDistAirport != null && ctx.distAirport > rc.arrMaxDistAirport) return false;
+    }
+    if (ctx.kind === 'dep') {
+      if (rc.depMinDistAirport != null && ctx.distAirport < rc.depMinDistAirport) return false;
+      if (rc.depMaxDistAirport != null && ctx.distAirport > rc.depMaxDistAirport) return false;
+      if (rc.depMaxSpawnAge != null && ctx.spawnAge > rc.depMaxSpawnAge) return false;
+    }
+    return true;
+  }
+
+  function randomKindsFor(ac, game) {
+    return Object.keys(TYPES).filter(kind => allowsRandom(kind, ac, game));
   }
 
   function create(kind, ac, game, opts) {
@@ -641,6 +680,7 @@ const Emergency = (() => {
     operationalState,
     normalizeQuery,
     summaryText,
+    randomKindsFor,
   };
 })();
 

@@ -3,6 +3,26 @@
 > Histórico consolidado retroativamente a partir de todos os commits do repositório.
 > As versões abaixo agrupam os commits por marco funcional, com a versão mais recente no topo.
 
+## [0.6.1] — 2026-07-17
+
+### Controle de versão
+- O app passou a ler a versão atual diretamente do topo do `version.md`
+- A versão atual agora aparece no topo da interface e na tela inicial, mantendo o build sincronizado com o changelog
+
+### UX
+- Modal de ajuda alargada, com mais espaço para a coluna de descrição e quebra de linha adequada na coluna de comandos
+
+### Emergências
+- Sorteio de emergências inesperadas ganhou regras contextuais por tipo
+- Casos como `PAN PAN` por problema no trem de pouso muito longe do aeródromo deixaram de ser elegíveis aleatoriamente
+- Tipos ligados à fase terminal, como trem de pouso, flaps, bird strike e windshear, agora respeitam melhor distância/altitude/fase plausível
+
+### Commits desta versão
+- `3cb7a67` — `feat: exibir versao atual e ajustar modal de ajuda`
+- `5dbd82f` — `docs: adicionar changelog consolidado em version.md`
+
+---
+
 ## [0.6.0] — 2026-07-17
 
 ### Emergências e operação

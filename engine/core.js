@@ -280,8 +280,12 @@ class GameCore {
       this.time - a.spawnT > 45
     );
     if (!candidates.length) return;
-    const types = Object.keys(Emergency.TYPES);
-    this.startEmergency(U.pick(candidates), U.pick(types));
+    const pools = candidates
+      .map(ac => ({ ac, kinds: Emergency.randomKindsFor(ac, this) }))
+      .filter(item => item.kinds.length);
+    if (!pools.length) return;
+    const chosen = U.pick(pools);
+    this.startEmergency(chosen.ac, U.pick(chosen.kinds));
   }
 
   handleEmergencyState(ac) {

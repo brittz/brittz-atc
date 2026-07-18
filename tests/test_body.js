@@ -429,6 +429,30 @@ console.log(core.airportState.state === 'recovery'
   ? 'OK ESTADO OPERACIONAL (recuperação após encerramento)'
   : 'FALHA ESTADO OPERACIONAL');
 
+// elegibilidade contextual para sorteio aleatório
+const farGearAc = new Aircraft({
+  cs: 'TST4001', radio: 'Teste', type: 'A320', kind: 'arr',
+  x: 0, y: -40, alt: 11000, spd: 250, hdg: 0,
+  nav: { mode: 'route', route: ['FAROL'], idx: 0 }, spawnT: 0,
+});
+const nearGearAc = new Aircraft({
+  cs: 'TST4002', radio: 'Teste', type: 'A320', kind: 'arr',
+  x: 0, y: -12, alt: 5000, spd: 190, hdg: 0,
+  nav: { mode: 'hdg', hdg: 0, turn: null }, spawnT: 0,
+});
+const depGearAc = new Aircraft({
+  cs: 'TST4003', radio: 'Teste', type: 'B738', kind: 'dep',
+  x: 4, y: 0, alt: 3000, spd: 190, hdg: 90,
+  nav: { mode: 'hdg', hdg: 90, turn: null }, spawnT: core.time - 90,
+});
+const farKinds = Emergency.randomKindsFor(farGearAc, core);
+const nearKinds = Emergency.randomKindsFor(nearGearAc, core);
+const depKinds = Emergency.randomKindsFor(depGearAc, core);
+console.log('EMGctx  -> far landing-gear?', farKinds.includes('landing-gear'), '| near?', nearKinds.includes('landing-gear'), '| dep?', depKinds.includes('landing-gear'));
+console.log(!farKinds.includes('landing-gear') && nearKinds.includes('landing-gear') && depKinds.includes('landing-gear')
+  ? 'OK EMERG CONTEXTO (trem de pouso só entra perto/na fase plausível)'
+  : 'FALHA EMERG CONTEXTO');
+
 // iniciativas gerais dos pilotos fora da emergência
 const aiCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
 aiCore.pendingRadio = [];
