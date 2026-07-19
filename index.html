@@ -297,8 +297,10 @@
        depois de no ar, <code>A FL150</code> para subir até a transferência automática no limite da TMA.</p>
     <p class="tiny">O parser aceita sintaxe curta do jogo, abreviações ATC e fraseologia natural em pt-BR/inglês.
        No rádio, callsigns comerciais usam o designativo da empresa + números individuais
-       (ex.: <code>GLO1234</code> → “Gol Um Dois Três Quatro”); matrículas usam o alfabeto ICAO
-       (ex.: <code>PT-ABC</code> → “Papa Tango Alpha Bravo Charlie”). Strips e comandos continuam com o código textual.
+       (ex.: <code>GLO1234</code> → “Gol Uno Dois Três Quatro”); matrículas usam o alfabeto ICAO
+       (ex.: <code>PT-ABC</code> → “Papa Tango Alpha Bravo Charlie”). A voz (TTS) aplica fraseologia
+       BR (Uno/Meia, pistas Esquerda/Direita, Flight Level; asa rotativa = “Asa Rotativa”).
+       Strips e comandos continuam com o código textual.
        A separação radar (3 NM / 1.000 ft) respeita regras do aeroporto: operações paralelas válidas
        (aproximações/decolagens independentes) não geram alarme nem penalidade.
        Teclas: <b>P</b> pausa · <b>Enter</b> transmite · <b>↑/↓</b> histórico · <b>Esc</b> limpa · roda do mouse = zoom · arrastar = mover radar.</p>
@@ -307,6 +309,7 @@
 
 <script src="engine/data.js"></script>
 <script src="engine/radio_phrase.js"></script>
+<script src="engine/voice_phrase.js"></script>
 <script src="engine/separation.js"></script>
 <script src="engine/holding.js"></script>
 <script src="engine/emergency.js"></script>

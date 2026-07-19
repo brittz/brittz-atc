@@ -78,7 +78,10 @@ const UI = (() => {
   function speak(ac, text) {
     if (!game.settings.tts || !('speechSynthesis' in window)) return;
     loadVoices();
-    const u = new SpeechSynthesisUtterance(text);
+    const phonetic = (typeof VoicePhrase !== 'undefined')
+      ? VoicePhrase.forTts(text, { lang: 'pt' })
+      : text;
+    const u = new SpeechSynthesisUtterance(phonetic);
     u.lang = 'pt-BR';
     if (voices.length) u.voice = voices[hash(ac.cs) % voices.length];
     u.rate = 1.15 + (hash(ac.cs) % 4) * 0.06;

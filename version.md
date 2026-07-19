@@ -6,6 +6,13 @@
 > **Release candidate:** enquanto o cabeçalho for `X.Y.Z-rc`, as mudanças acumulam neste
 > bloco. Só vira versão fechada (`X.Y.Z`) quando o usuário pedir para fechar/commitar.
 
+## [0.9.4] — 2026-07-18
+
+### Voz — radiotelefonia (TTS)
+- Camada `VoicePhrase.forTts`: números BR (Uno/Meia), pistas Esquerda/Direita/Centro, FL → Flight Level, frequências com Decimal, abreviações (ILS, DCT…)
+- Callsigns alinhados à fraseologia BR (`Uno`/`Meia`); asa rotativa identifica-se como **Asa Rotativa** (não “Helicóptero”)
+- SPEC: `docs/SPECS/gameplay/voice-radiotelephony.md`
+
 ## [0.9.3] — 2026-07-18
 
 ### Companhias históricas

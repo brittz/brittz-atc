@@ -538,7 +538,7 @@ class GameCore {
     const L = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
     const cs = 'PR-' + L() + L() + L();
     const ac = new Aircraft({
-      cs, radio: 'Helicóptero ' + cs.replace('-', ' '), type,
+      cs, radio: 'Asa Rotativa', type,
       kind: 'hel', x: ex, y: ey,
       alt: U.pick([1500, 2000, 2500, 3000]), spd: 100,
       hdg: U.brg(ex, ey, wptExit[0], wptExit[1]),
@@ -553,7 +553,7 @@ class GameCore {
     ac.zoneEntered = false;
     this.usedCs.add(cs);
     this.aircraft.push(ac);
-    this.radioPilot(ac, `boa tarde, helicóptero ${type} VFR, ${Math.round(U.dist(0, 0, ex, ey))} milhas ao ` +
+    this.radioPilot(ac, `boa tarde, asa rotativa ${type} VFR, ${Math.round(U.dist(0, 0, ex, ey))} milhas ao ` +
       `${this.cardinal(th + 180)}, ${U.fmtAlt(ac.alt)}, vamos cruzar a zona do aeródromo`, 0.4);
   }
 

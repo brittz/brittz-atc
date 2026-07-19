@@ -9,6 +9,8 @@
 ```
 engine/            motor compartilhado (browser + Node)
   data.js          (movido de js/data.js — DATA + U)
+  radio_phrase.js   fraseologia de callsigns (Uno/Meia, ICAO)
+  voice_phrase.js   conversão fonética p/ TTS (pistas, FL, freq…)
   emergency.js     perfis/estados/evolução das emergências (V2)
   runway_state.js  estados por pista (livre/ocupada/bloqueada/inspeção)
   emergency_units.js  veículos de resposta (ARFF, ambulância, etc.)

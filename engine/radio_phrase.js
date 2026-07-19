@@ -15,8 +15,9 @@ const RadioPhrase = (() => {
 
   const DIGITS = {
     pt: {
-      0: 'zero', 1: 'um', 2: 'dois', 3: 'três', 4: 'quatro',
-      5: 'cinco', 6: 'seis', 7: 'sete', 8: 'oito', 9: 'nove',
+      // Fraseologia aeronáutica brasileira (DECEA / radiotelefonia)
+      0: 'zero', 1: 'uno', 2: 'dois', 3: 'três', 4: 'quatro',
+      5: 'cinco', 6: 'meia', 7: 'sete', 8: 'oito', 9: 'nove',
     },
     en: {
       0: 'zero', 1: 'one', 2: 'two', 3: 'three', 4: 'four',
@@ -26,7 +27,7 @@ const RadioPhrase = (() => {
 
   // operadores extras não listados em DATA.AIRLINES (expansível)
   const EXTRA_OPS = [
-    { code: 'FAB', radio: 'Força Aérea' },
+    { code: 'FAB', radio: 'Força Aérea Brasileira' },
   ];
 
   function digitWord(d, lang) {
@@ -84,7 +85,12 @@ const RadioPhrase = (() => {
 
     // Matrícula / identificador com hífen → alfabeto ICAO + dígitos
     if (isRegistration(u)) {
-      return u.replace(/-/g, '').split('').map(c => spellChar(c, lang)).join(' ');
+      const spelled = u.replace(/-/g, '').split('').map(c => spellChar(c, lang)).join(' ');
+      // Asa rotativa: identificação operacional + matrícula (SPEC voice-radiotelephony)
+      if (opts.radio && /asa\s*rotativa/i.test(String(opts.radio))) {
+        return 'Asa Rotativa ' + spelled;
+      }
+      return spelled;
     }
 
     const al = findAirline(u);

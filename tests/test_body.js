@@ -271,7 +271,7 @@ console.log(maxAltBeforeFarol <= 2100 && v9.clrAlt === 5000 && v9.alt >= 4900 ? 
 let heliScored = null;
 game.onHeliCrossed = ac => { heliScored = ac.cs; };
 function mkHeli(cs, x, y, exit) {
-  const h = new Aircraft({ cs, radio: 'Helicóptero ' + cs, type: 'H125', kind: 'hel', x, y, alt: 2000, spd: 100, hdg: U.brg(x, y, exit[0], exit[1]) });
+  const h = new Aircraft({ cs, radio: 'Asa Rotativa', type: 'H125', kind: 'hel', x, y, alt: 2000, spd: 100, hdg: U.brg(x, y, exit[0], exit[1]) });
   h.clrAlt = 2000; h.wptExit = exit; h.heliAuto = true; h.heliState = 'inbound';
   h.crossRequested = false; h.crossCleared = false; h.zoneEntered = false;
   game.aircraft.push(h);
@@ -711,10 +711,10 @@ const rp3 = RadioPhrase.speakCallsign('PT-ABC', { lang: 'en' });
 const rp4 = RadioPhrase.speakCallsign('TAM3271', { radio: 'LATAM', lang: 'pt' });
 console.log('RPcs   ->', rp1, '|', rp2, '|', rp3, '|', rp4);
 console.log(
-  rp1 === 'Gol Um Dois Três Quatro' &&
+  rp1 === 'Gol Uno Dois Três Quatro' &&
   rp2 === 'Azul Four Five One Two' &&
   rp3 === 'Papa Tango Alpha Bravo Charlie' &&
-  rp4 === 'LATAM Três Dois Sete Um' &&
+  rp4 === 'LATAM Três Dois Sete Uno' &&
   !/Golf Lima Oscar/i.test(rp1)
     ? 'OK RADIO PHRASE CALLSIGN'
     : 'FALHA RADIO PHRASE ' + JSON.stringify({ rp1, rp2, rp3, rp4 })
@@ -811,7 +811,7 @@ console.log(stdPast3500 && !stdAlarm && stdSameBad
 // ---------- hover (helicóptero) ----------
 const hvCore = new GameCore(airportJson, { cfg: '09', traffic: 'calmo', emit: () => {} });
 const hvH = new Aircraft({
-  cs: 'PR-HVR', radio: 'Helicóptero', type: 'H125', kind: 'hel',
+  cs: 'PR-HVR', radio: 'Asa Rotativa', type: 'H125', kind: 'hel',
   x: 10, y: 8, alt: 1500, spd: 80, hdg: 270,
   nav: { mode: 'hdg', hdg: 270, turn: null },
 });
@@ -1053,7 +1053,7 @@ const histHasVasp = histWithHist.some(a => a.code === 'VSP');
 const histBigger = histWithHist.length > histActiveOnly.length;
 DATA.AIRLINES = histWithHist;
 const histSpeak = RadioPhrase.speakCallsign('VRG1234', { lang: 'pt' });
-const histSpeakOk = histSpeak === 'Varig Um Dois Três Quatro';
+const histSpeakOk = histSpeak === 'Varig Uno Dois Três Quatro';
 DATA.AIRLINES = histActiveOnly;
 const histMeta = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/airlines.json'), 'utf8')).airlines;
 const histMetaOk = histMeta.every(a =>
@@ -1065,5 +1065,35 @@ console.log(histHasActive && histNoVarig && histHasVarig && histHasVasp && histB
   ? 'OK HISTORICAL AIRLINES (filtro ativa, pool histórico, fraseologia, metadados)'
   : 'FALHA HISTORICAL AIRLINES ' + JSON.stringify({
     histHasActive, histNoVarig, histHasVarig, histHasVasp, histBigger, histSpeakOk, histMetaOk, histSpeak,
+  }));
+
+// ---------- voz / radiotelefonia TTS (VoicePhrase) ----------
+const vtFl = VoicePhrase.forTts('suba FL160');
+const vtRwy = VoicePhrase.forTts('autorizado pouso pista 09L');
+const vtRwyR = VoicePhrase.forTts('decolagem 09R');
+const vtRwyC = VoicePhrase.forTts('pista 18C');
+const vtFreq = VoicePhrase.forTts('contato 109.90');
+const vtNum = VoicePhrase.forTts('proa 276');
+const vtHeli = VoicePhrase.forTts('helicóptero a 5 milhas');
+const vtIls = VoicePhrase.forTts('autorizado ILS');
+const vtCs = RadioPhrase.speakCallsign('GLO1234', { lang: 'pt' });
+const vtCsTts = VoicePhrase.forTts(vtCs);
+const vtReg = RadioPhrase.speakCallsign('PT-XAB', { radio: 'Asa Rotativa', lang: 'pt' });
+const vtFlOk = vtFl === 'suba Flight Level Uno Meia Zero';
+const vtRwyOk = vtRwy === 'autorizado pouso pista Zero Nove Esquerda';
+const vtRwyROk = /Zero Nove Direita/.test(vtRwyR);
+const vtRwyCOk = /Uno Oito Centro/.test(vtRwyC);
+const vtFreqOk = vtFreq === 'contato Uno Zero Nove Decimal Nove Zero';
+const vtNumOk = vtNum === 'proa Dois Sete Meia';
+const vtHeliOk = vtHeli === 'Asa Rotativa a Cinco milhas';
+const vtIlsOk = /I L S/.test(vtIls);
+const vtCsOk = vtCs === 'Gol Uno Dois Três Quatro' && vtCsTts === 'Gol Uno Dois Três Quatro';
+const vtRegOk = vtReg === 'Asa Rotativa Papa Tango X-ray Alpha Bravo';
+console.log('VOICE ->', vtFl, '|', vtRwy, '|', vtFreq, '|', vtReg);
+console.log(vtFlOk && vtRwyOk && vtRwyROk && vtRwyCOk && vtFreqOk && vtNumOk && vtHeliOk && vtIlsOk && vtCsOk && vtRegOk
+  ? 'OK VOICE PHRASE (FL, pistas, freq, Uno/Meia, Asa Rotativa, ICAO)'
+  : 'FALHA VOICE PHRASE ' + JSON.stringify({
+    vtFl, vtRwy, vtRwyR, vtRwyC, vtFreq, vtNum, vtHeli, vtIls, vtCs, vtCsTts, vtReg,
+    vtFlOk, vtRwyOk, vtRwyROk, vtRwyCOk, vtFreqOk, vtNumOk, vtHeliOk, vtIlsOk, vtCsOk, vtRegOk,
   }));
 

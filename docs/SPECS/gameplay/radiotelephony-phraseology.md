@@ -61,7 +61,10 @@ Os números do sufixo do voo são pronunciados **individualmente**.
 
 Exemplo:
 
-1234 → Um Dois Três Quatro (pt) · One Two Three Four (en)
+1234 → Uno Dois Três Quatro (pt) · One Two Three Four (en)
+
+> Em português aeronáutico brasileiro: **Uno** (1) e **Meia** (6), não “um”/“seis”.
+> A síntese de voz (`VoicePhrase`) aplica regras adicionais — ver **Voice Radiotelephony**.
 
 ---
 
@@ -69,9 +72,9 @@ Exemplo:
 
 | Interno | Comunicação (pt) |
 |---|---|
-| GLO1234 | Gol Um Dois Três Quatro |
-| AZU4512 | Azul Quatro Cinco Um Dois |
-| TAM3271 | LATAM Três Dois Sete Um |
+| GLO1234 | Gol Uno Dois Três Quatro |
+| AZU4512 | Azul Quatro Cinco Uno Dois |
+| TAM3271 | LATAM Três Dois Sete Uno |
 
 **Não** se fala “Golf Lima Oscar One Two Three Four”.
 

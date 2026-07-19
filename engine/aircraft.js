@@ -905,7 +905,7 @@ class Aircraft {
       toExit();
       if (!this.crossRequested && d < 20.5) {
         this.crossRequested = true;
-        game.radioPilot(this, `helicóptero a ${Math.round(d)} milhas do aeródromo, ` +
+        game.radioPilot(this, `asa rotativa a ${Math.round(d)} milhas do aeródromo, ` +
           `${U.fmtAlt(Math.round(this.alt))}, solicitamos cruzamento da zona`);
       }
       if (d <= ZONE + 0.2) {
