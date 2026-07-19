@@ -64,7 +64,8 @@ class Aircraft {
       vs: 0,
       star: opts.star ?? null,   // nome da STAR
       sid: opts.sid ?? null,     // nome da SID
-      dest: opts.dest ?? null,
+      dest: opts.dest ?? null,   // destino (saídas)
+      origin: opts.origin ?? null, // procedência (chegadas)
       emergency: Emergency.hydrate(opts.emergency),
       state: opts.state ?? 'air',
       // navegação lateral

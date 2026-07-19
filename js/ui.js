@@ -92,11 +92,13 @@ const UI = (() => {
   function hash(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
 
   // ---------------- log de comunicações ----------------
-  function log(from, text, cls) {
+  function log(from, text, cls, cs) {
     const el = document.createElement('div');
     el.className = 'msg ' + (cls || '');
     const t = game.clock();
-    el.innerHTML = `<span class="t">${t}</span> <span class="who">${from}</span> ${text}`;
+    // o "quem" vira indicativo clicável quando a mensagem se refere a uma aeronave
+    const who = cs ? csTag(cs, from) : from;
+    el.innerHTML = `<span class="t">${t}</span> <span class="who">${who}</span> ${text}`;
     const box = $('log');
     box.appendChild(el);
     while (box.children.length > 120) box.removeChild(box.firstChild);
@@ -109,14 +111,14 @@ const UI = (() => {
       const re = new RegExp('^' + String(meta.cs).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*,?\\s*', 'i');
       body = spoken + ', ' + String(text || '').replace(re, '');
     }
-    log('SBCV APP', body, 'atc');
+    log('SBCV APP', body, 'atc', meta && meta.cs);
     radioClick();
   }
   function logPilot(ac, text) {
     const spoken = (typeof RadioPhrase !== 'undefined')
       ? RadioPhrase.speakCallsign(ac.cs, { radio: ac.radio, lang: 'pt' })
       : (ac.radio || ac.cs);
-    log(spoken, text, 'pilot' + (ac.emergency ? ' emg' : ''));
+    log(spoken, text, 'pilot' + (ac.emergency ? ' emg' : ''), ac.cs);
     radioClick();
     const body = String(text || '').replace(ac.cs, '').trim();
     speak(ac, (body ? body + ', ' : '') + spoken);
@@ -186,7 +188,7 @@ const UI = (() => {
       const status = stripStatus(a);
       const proc = a.kind === 'arr' ? (a.star || '—') : a.kind === 'hel' ? 'VFR' : (a.sid || '—');
       const html =
-        `<div class="s1"><b>${a.cs}</b><span>${a.type}/${a.perf.wtc}</span><span>${a.kind === 'arr' ? '' : a.dest || ''}</span></div>` +
+        `<div class="s1"><b>${csTag(a.cs)}</b><span>${a.type}/${a.perf.wtc}</span><span>${a.kind === 'arr' ? '' : a.dest || ''}</span></div>` +
         `<div class="s2"><span>${proc}</span><span>${a.onGround ? '' : Math.round(a.alt / 100).toString().padStart(3, '0') + '↦' + Math.round(a.clrAlt / 100).toString().padStart(3, '0')}</span><span class="st">${status}</span></div>`;
       if (el._html !== html) { el._html = html; el.innerHTML = html; }
       // helicópteros entram na lista de chegadas (tráfego que chama você)
@@ -334,7 +336,79 @@ const UI = (() => {
     val.addEventListener('pointercancel', () => { lastY = null; });
   }
 
+  // ---------------- ação reutilizável: inserir indicativo na caixa ----------
+  // Qualquer indicativo clicável na UI usa este mesmo comportamento.
+  // fragmento HTML de um indicativo clicável (delegação trata o clique)
+  function csTag(cs, label) {
+    if (!cs) return esc(label || '');
+    return `<span class="csref" role="button" tabindex="0" data-cs="${esc(cs)}" title="Inserir ${esc(cs)} na caixa de comando">${esc(label || cs)}</span>`;
+  }
+  // Insere o indicativo na caixa de comando (ver SPEC aircraft-information-panel).
+  // Vazia → só o indicativo; mesmo indicativo → preserva a edição em curso;
+  // indicativo diferente → substitui. No toque, NÃO foca (não abre o teclado).
+  function insertCallsign(cs) {
+    if (!cs) return;
+    const input = $('cmdInput');
+    if (!input) return;
+    const lead = input.value.replace(/^\s+/, '');
+    const m = lead.match(/^(\S+)(?:\s+([\s\S]*))?$/);
+    const first = m ? m[1] : '';
+    if (!lead) {
+      input.value = cs + ' ';
+    } else if (first.toUpperCase() === cs.toUpperCase()) {
+      const rest = m && m[2] != null ? m[2] : '';
+      input.value = rest ? cs + ' ' + rest : cs + ' ';
+    } else {
+      input.value = cs + ' ';
+    }
+    if (!isTouch) {
+      input.focus();
+      const end = input.value.length;
+      try { input.setSelectionRange(end, end); } catch (e) {}
+    }
+  }
+
   // ---------------- painéis de seleção (informações + ações) ----------------
+  // estado de expansão do detalhamento: aberto no desktop, recolhido no toque
+  let selExpanded = !isTouch;
+
+  function fieldsHtml(fields) {
+    return (fields || [])
+      .map(f => `<div class="selField"><span class="fl">${esc(f.label)}</span><span class="fv">${esc(f.value)}</span></div>`)
+      .join('');
+  }
+  function renderSelInfoPanel(vm) {
+    const compactEl = $('selCompact');
+    const expandBtn = $('selExpand');
+    const detailEl = $('selDetail');
+    if (!vm) {
+      if (compactEl) compactEl.innerHTML = '';
+      if (detailEl) detailEl.innerHTML = '';
+      if (expandBtn) expandBtn.classList.add('hidden');
+      return;
+    }
+    // chips essenciais (sempre visíveis)
+    if (compactEl) {
+      compactEl.innerHTML = (vm.compact || [])
+        .map(f => `<span class="chip"><b>${esc(f.label)}</b> ${esc(f.value)}</span>`)
+        .join('');
+      compactEl.style.display = (vm.compact && vm.compact.length) ? '' : 'none';
+    }
+    // detalhamento agrupado (expansível)
+    if (detailEl) {
+      detailEl.innerHTML = (vm.groups || [])
+        .map(g => `<div class="selGroup"><div class="sgTitle">${esc(g.title)}</div>${fieldsHtml(g.fields)}</div>`)
+        .join('');
+      detailEl.classList.toggle('hidden', !selExpanded);
+    }
+    if (expandBtn) {
+      const hasDetail = vm.groups && vm.groups.length;
+      expandBtn.classList.toggle('hidden', !hasDetail);
+      expandBtn.setAttribute('aria-expanded', String(selExpanded));
+      expandBtn.textContent = selExpanded ? 'Menos informações ▴' : 'Mais informações ▾';
+    }
+  }
+
   function refreshSelPanel() {
     const p = $('selPanel');
     const q = $('quickPanel');
@@ -344,7 +418,14 @@ const UI = (() => {
     q.classList.remove('hidden');
     if (wheelCs !== a.cs) wheelInitFor(a);
     else wheelSync(a);
-    $('selCs').textContent = a.cs + (a.emergency ? ' ⚠ EMERGÊNCIA' : '');
+
+    // view-model consolidado (o painel NÃO lê a aeronave diretamente): o serviço
+    // AircraftInfo agrupa os dados operacionais e calcula o ETA.
+    const vm = (typeof AircraftInfo !== 'undefined')
+      ? AircraftInfo.build(a, { arrRwys: game.arrRwys(), depRwys: game.depRwys(), stateLabel: stripStatus(a) })
+      : null;
+
+    $('selCs').innerHTML = csTag(a.cs) + (a.emergency ? ' <span class="emgFlag">⚠ EMERGÊNCIA</span>' : '');
     $('selInfo').textContent =
       `${a.type}/${a.perf.wtc} · ` + (a.kind === 'arr' ? 'Chegada ' + (a.star || '')
         : a.kind === 'hel' ? 'Helicóptero VFR — cruzamento da zona'
@@ -355,13 +436,18 @@ const UI = (() => {
     $('selData').textContent = a.onGround
       ? `No solo — ${stripStatus(a)}`
       : `ALT ${Math.round(a.alt)} ft (autz ${Math.round(a.clrAlt)}) · VEL ${Math.round(a.spd)} kt · PROA ${U.fmtHdg(a.hdg)} · ${stripStatus(a)}${nextFix}`;
+
+    // resumo compacto (sempre visível) + detalhamento agrupado (expansível)
+    renderSelInfoPanel(vm);
+
     if (a.emergency) {
       $('selEmergency').classList.remove('hidden');
       $('selEmergency').textContent = emergencySummary(a) +
         (a.emergency.evolution ? ' · ' + emergencyEvolutionLabel(a.emergency.evolution) : '') +
         (a.emergency.info && a.emergency.info.runway ? ' · prefere ' + a.emergency.info.runway : '');
       const infoHtml = emergencyInfoHtml(a);
-      $('selEmergencyInfo').classList.toggle('hidden', !infoHtml);
+      // informações extras da emergência: opcionais, só quando expandido
+      $('selEmergencyInfo').classList.toggle('hidden', !infoHtml || !selExpanded);
       $('selEmergencyInfo').innerHTML = infoHtml;
     } else {
       $('selEmergency').classList.add('hidden');
@@ -719,6 +805,21 @@ const UI = (() => {
     });
     $('selClose').onclick = () => game.select(null);
 
+    // expandir/recolher o detalhamento do painel de informações
+    const selExpandBtn = $('selExpand');
+    if (selExpandBtn) selExpandBtn.onclick = () => { selExpanded = !selExpanded; refreshSelPanel(); };
+
+    // clique/Enter em qualquer indicativo (.csref) insere-o na caixa de comando
+    document.addEventListener('click', e => {
+      const t = e.target.closest && e.target.closest('.csref');
+      if (t && t.dataset.cs) { e.preventDefault(); insertCallsign(t.dataset.cs); }
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const t = e.target && e.target.closest && e.target.closest('.csref');
+      if (t && t.dataset.cs) { e.preventDefault(); insertCallsign(t.dataset.cs); }
+    });
+
     $('btnCharts').onclick = openCharts;
     $('btnHelp').onclick = () => $('helpModal').classList.remove('hidden');
     const openVer = () => openChangelog();
@@ -894,5 +995,5 @@ const UI = (() => {
     if (isTouch && document.activeElement === $('cmdInput')) $('cmdInput').blur();
   }
 
-  return { init, logATC, logPilot, logSys, logChat, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, openChangelog, propose, refreshAtisModal, dismissKeyboard, isTouch };
+  return { init, logATC, logPilot, logSys, logChat, refreshStrips, refreshSelPanel, refreshTop, setAlarm, chime, flashBanner, openCharts, openChangelog, propose, refreshAtisModal, dismissKeyboard, insertCallsign, isTouch };
 })();

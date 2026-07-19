@@ -163,6 +163,10 @@ infra cresce com voz em tempo real (mitigado: texto no MVP).
 
 ## 8.2 PRÓXIMOS PASSOS (em ordem recomendada)
 
+> **2026-07-19:** a execução dos itens abaixo está detalhada, com escopo e decisões,
+> em **`docs/PLANO-MP-CONCLUSAO.md`** (leva P0–P3: higiene do MVP, seleção de
+> aeroporto, handoff entre jogadores e deploy). Leia-o antes de codar nestes itens.
+
 1. **Deploy do MVP** (§4): front + servidor juntos no Fly.io (o server já serve os
    estáticos — um único processo basta). Criar `Dockerfile` simples (node:22-slim,
    `CMD node server/index.js`) + `fly launch`. REQUISITO: conta Fly.io do usuário.

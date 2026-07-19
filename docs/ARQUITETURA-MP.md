@@ -130,12 +130,16 @@ qualquer jogador (não-OBS) pode dar o comando (cobertura).
 ## 5. Serialização de aeronave (snapshot)
 
 Whitelist (nada além disso): `cs, radio, type, kind, x, y, alt, spd, hdg, vs, clrAlt,
-clrSpd, spdMode, state, nav, app, landClr, star, sid, dest, rwy, emergency, via, stca,
+clrSpd, spdMode, state, nav, app, landClr, star, sid, dest, origin, rwy, emergency, via, stca,
 goingAround, timer, vacateClr, vacateSide, pilotAi:{pendingAsk,standbyUntil}, heliState, heliAuto, hovering, hoverPos, hoverHdg, crossRequested, crossCleared, wptExit,
 trail, pending:[{label}], reports:[{label}], airportInSight, sightRequested, flightPlan:{type,name,route}.
 
 `app` é `{phase:'none'|'cleared'|'loc'|'gs', rwy, type:'ils'|'visual'|null}` — `type`
 distingue ILS de aproximação visual (mesmo eixo de pista na v1).
+
+`origin` (procedência da chegada) é simétrico a `dest` (destino da saída), usado pelo
+painel de informações (`AircraftInfo`). Sorteado no spawn a partir de
+`DATA.ORIGINS[<fixo de entrada da STAR>]` (opcional no JSON do aeroporto).
 
 `airportState` do snapshot é um objeto leve `{state:'normal'|'emergency'|'recovery',
 label, active:[callsigns], emergencyCs?, summary?}`. O campo `emergency` da aeronave

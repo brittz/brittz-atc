@@ -43,6 +43,9 @@
         <div id="selCs">—</div>
         <div id="selInfo"></div>
         <div id="selData"></div>
+        <div id="selCompact"></div>
+        <button id="selExpand" class="hidden" type="button" aria-expanded="false" title="Mostrar mais informações">Mais informações ▾</button>
+        <div id="selDetail" class="hidden"></div>
         <div id="selEmergency" class="hidden"></div>
         <div id="selEmergencyInfo" class="hidden"></div>
         <div id="selPend"></div>
@@ -281,6 +284,12 @@
        <b>fixo</b> (monta <code>DCT</code>), numa <b>cabeceira</b> (monta <code>ILS</code>/<code>AP</code>/<code>DEC</code>)
        ou em <b>espaço vazio</b> (monta <code>P proa</code>) e confirme no botão 📡 ou Enter.
        Esc ou ✕ desselecionam. Pinça = zoom, arrastar = mover.</p>
+    <p>🛈 O <b>painel de informações</b> da aeronave selecionada reúne origem, destino, tipo,
+       SID/STAR, aproximação, pista prevista e o <b>ETA para o pouso</b>. Toque em
+       <b>Mais informações</b> para expandir os grupos (compacto no celular). Clicar em
+       qualquer <b>indicativo</b> — no painel, nas strips, nos rótulos do radar ou no log de
+       comunicações — insere-o na caixa de comando (no celular sem abrir o teclado); se você
+       já estava digitando para a mesma aeronave, a instrução em andamento é preservada.</p>
     <p>⚠ Em emergências, o topo mostra o estado operacional do aeroporto (<b>Normal</b>, <b>Emergência</b> ou <b>Recuperação</b>). A emergência <b>não fecha o aeroporto</b>: o Emergency Traffic Manager restringe só o que conflita (mesma faixa em final/pós-pouso); pistas paralelas independentes (SBCV N/S) podem continuar. O ATIS lista restrições temporárias. Veículos de emergência aparecem no radar quando despachados.</p>
     <p>🌬 O vento muda com o tempo — acompanhe pelo botão <b>ATIS</b> no topo. Com vento de cauda
        forte, troque as pistas em uso por lá.</p>
@@ -319,6 +328,7 @@
 <script src="engine/emergency_traffic.js"></script>
 <script src="engine/approach.js"></script>
 <script src="engine/aircraft.js"></script>
+<script src="engine/aircraft_info.js"></script>
 <script src="engine/commands.js"></script>
 <script src="engine/core.js"></script>
 <script src="js/airline_service.js"></script>

@@ -127,6 +127,13 @@
     "DENDE": ["SBPA", "SBFL", "SAEZ", "SCEL"]
   },
 
+  "origins": {
+    "SABIA": ["SBFZ", "SBRF", "KMIA", "TNCA"],
+    "COSTA": ["SBPA", "SBFL", "SAEZ", "SCEL"],
+    "PEDRA": ["SBSV", "GVAC", "LPPT", "LEMD"],
+    "TRIGO": ["SBGL", "SBGR", "SBKP", "SBCF"]
+  },
+
   "configs": {
     "09": { "arrRwy": "09L", "depRwy": "09R", "runways": ["09L", "09R"], "wind": { "dir": 80,  "spd": 9 }, "label": "Fluxo LESTE — padrão pousos 09L, decolagens 09R", "btn": "Fluxo 09 (leste)" },
     "27": { "arrRwy": "27R", "depRwy": "27L", "runways": ["27R", "27L"], "wind": { "dir": 260, "spd": 9 }, "label": "Fluxo OESTE — padrão pousos 27R, decolagens 27L", "btn": "Fluxo 27 (oeste)" }

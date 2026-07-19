@@ -149,8 +149,38 @@ button.primary:hover { background: #1a5a42; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #selCs { color: var(--sel); font-size: 16px; font-weight: bold; padding-right: 26px; }
+#selCs .emgFlag { color: var(--alert); font-size: 12px; }
 #selInfo { color: var(--dim); margin: 2px 0 4px; }
-#selData { font-size: 12px; margin-bottom: 8px; }
+#selData { font-size: 12px; margin-bottom: 6px; }
+
+/* indicativo clicável (insere na caixa de comando) — qualquer área */
+.csref { cursor: pointer; border-bottom: 1px dotted currentColor; }
+.csref:hover, .csref:focus { color: var(--sel); outline: none; }
+
+/* resumo compacto (chips sempre visíveis) */
+#selCompact { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-bottom: 6px; }
+#selCompact .chip {
+  font-size: 11px; color: var(--txt);
+  background: #06121a; border: 1px solid var(--line); border-radius: 3px;
+  padding: 2px 6px;
+}
+#selCompact .chip b { color: var(--dim); font-weight: normal; margin-right: 3px; }
+
+/* botão de expandir/recolher o detalhamento */
+#selExpand {
+  font-size: 11px; padding: 2px 8px; margin-bottom: 6px;
+  color: var(--dim); border-color: var(--line); background: #06121a;
+}
+#selExpand:hover { color: var(--sel); }
+
+/* detalhamento agrupado (expansível) */
+#selDetail { margin-bottom: 8px; border-top: 1px solid #233947; padding-top: 6px; }
+#selDetail .selGroup { margin-bottom: 6px; }
+#selDetail .selGroup:last-child { margin-bottom: 0; }
+#selDetail .sgTitle { color: var(--warn); font-size: 10px; letter-spacing: 1px; margin-bottom: 2px; text-transform: uppercase; }
+#selDetail .selField { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; line-height: 1.5; }
+#selDetail .selField .fl { color: var(--dim); }
+#selDetail .selField .fv { color: var(--txt); text-align: right; }
 #selEmergency { font-size: 11px; color: var(--alert); margin-bottom: 8px; line-height: 1.45; }
 #selEmergencyInfo {
   font-size: 11px; color: var(--txt); margin-bottom: 8px; line-height: 1.5;

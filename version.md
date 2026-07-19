@@ -6,6 +6,25 @@
 > **Release candidate:** enquanto o cabeçalho for `X.Y.Z-rc`, as mudanças acumulam neste
 > bloco. Só vira versão fechada (`X.Y.Z`) quando o usuário pedir para fechar/commitar.
 
+## [0.9.5] — 2026-07-19
+
+### Painel de informações da aeronave
+- Painel de seleção (`selPanel`) evoluído para uma ferramenta de decisão: reúne origem,
+  destino, tipo/esteira, SID/STAR, aproximação ativa, pista prevista, estado do voo e
+  **ETA para o pouso** — atualizados automaticamente durante o voo
+- Cartão compacto (chips essenciais sempre visíveis) + botão **Mais informações** para
+  expandir os grupos (Identificação · Plano de voo · Operação); no celular abre recolhido e
+  as informações extras da emergência entram na área expansível (cartão não incha)
+- Serviço dedicado `engine/aircraft_info.js` (`AircraftInfo.build`/`.eta`) consolida o
+  view-model — o painel não lê a aeronave diretamente; extensível para novos campos/ações
+- **Clique no indicativo** em qualquer área (painel, strips, rótulos do radar, log de
+  comunicações) insere-o na caixa de comando via ação reutilizável `UI.insertCallsign`:
+  caixa vazia insere só o indicativo; mesmo indicativo preserva a edição em curso;
+  indicativo diferente substitui. No celular não abre o teclado (proteção mobile mantida)
+- Chegadas passam a ter **procedência** (`origin`), simétrica ao destino das saídas
+  (`DATA.ORIGINS` por fixo de entrada da STAR; opcional no JSON do aeroporto)
+- SPEC: `docs/SPECS/interface/aircraft-information-panel.md`
+
 ## [0.9.4] — 2026-07-18
 
 ### Voz — radiotelefonia (TTS)

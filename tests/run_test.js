@@ -10,7 +10,7 @@ AirlineService.loadSync(path.join(ROOT, 'data', 'airlines.json'));
 const airlinesActive = AirlineService.spawnList(false);
 const airlinesHist = AirlineService.spawnList(true);
 
-const src = ['engine/data.js', 'engine/radio_phrase.js', 'engine/voice_phrase.js', 'engine/separation.js', 'engine/holding.js', 'engine/emergency.js', 'engine/runway_state.js', 'engine/emergency_units.js', 'engine/emergency_response.js', 'engine/emergency_traffic.js', 'engine/approach.js', 'engine/aircraft.js', 'engine/commands.js', 'engine/core.js']
+const src = ['engine/data.js', 'engine/radio_phrase.js', 'engine/voice_phrase.js', 'engine/separation.js', 'engine/holding.js', 'engine/emergency.js', 'engine/runway_state.js', 'engine/emergency_units.js', 'engine/emergency_response.js', 'engine/emergency_traffic.js', 'engine/approach.js', 'engine/aircraft.js', 'engine/aircraft_info.js', 'engine/commands.js', 'engine/core.js']
   .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'))
   .join('\n')
   + '\nDATA.AIRLINES = ' + JSON.stringify(airlinesActive) + ';\n'

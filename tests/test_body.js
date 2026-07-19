@@ -1097,3 +1097,70 @@ console.log(vtFlOk && vtRwyOk && vtRwyROk && vtRwyCOk && vtFreqOk && vtNumOk && 
     vtFlOk, vtRwyOk, vtRwyROk, vtRwyCOk, vtFreqOk, vtNumOk, vtHeliOk, vtIlsOk, vtCsOk, vtRegOk,
   }));
 
+// ---------- painel de informações da aeronave (AircraftInfo) ----------
+const ainfoCtx = { arrRwys: ['09L'], depRwys: ['09R'], stateLabel: 'STAR' };
+
+// chegada no ar em STAR: origem, STAR, pista prevista e ETA finito
+const ainfoEntry = U.fix('SABIA');
+const ainfoArr = new Aircraft({
+  cs: 'AZU4567', radio: 'Azul', type: 'A320', kind: 'arr',
+  x: ainfoEntry[0], y: ainfoEntry[1], alt: 16000, spd: 290,
+  hdg: 120, star: 'SABIA1', origin: 'SBRF',
+  nav: { mode: 'route', route: DATA.STARS.SABIA1.route.map(r => r.fix), idx: 1 },
+});
+const ainfoVmArr = AircraftInfo.build(ainfoArr, ainfoCtx);
+const ainfoEtaArr = AircraftInfo.eta(ainfoArr, ainfoCtx);
+const ainfoOriginOk = ainfoVmArr.plan.origin === 'SBRF';
+const ainfoStarOk = ainfoVmArr.plan.star === 'SABIA1';
+const ainfoRwyOk = ainfoVmArr.plan.expectedRwy === '09L';
+const ainfoEtaOk = ainfoEtaArr.seconds != null && ainfoEtaArr.seconds > 0 && /min/.test(ainfoEtaArr.text);
+const ainfoGroupsOk = ainfoVmArr.groups.length >= 2 &&
+  ainfoVmArr.groups.some(g => g.title === 'Plano de voo') &&
+  ainfoVmArr.groups.some(g => g.fields.some(f => f.label === 'ETA pouso'));
+
+// no solo (ou vel. baixa): ETA indeterminado → N/D
+const ainfoGround = new Aircraft({ cs: 'GLO7', radio: 'Gol', type: 'B738', kind: 'arr', x: 0, y: 0, alt: 0, spd: 0, state: 'rollout' });
+const ainfoEtaND = AircraftInfo.eta(ainfoGround, ainfoCtx).text === 'N/D';
+
+// saída: destino e pista de decolagem; sem ETA de pouso
+const ainfoDep = new Aircraft({ cs: 'TAM8', radio: 'LATAM', type: 'A320', kind: 'dep', state: 'holdshort', sid: 'ARENA1', dest: 'SBFZ' });
+ainfoDep.rwy = '09R';
+const ainfoVmDep = AircraftInfo.build(ainfoDep, ainfoCtx);
+const ainfoDepOk = ainfoVmDep.plan.dest === 'SBFZ' && ainfoVmDep.plan.sid === 'ARENA1' && ainfoVmDep.plan.expectedRwy === '09R';
+const ainfoDepNoEta = !ainfoVmDep.groups.some(g => g.fields.some(f => f.label === 'ETA pouso'));
+
+// aproximação em curso: procedimento e pista vêm de app.*
+ainfoArr.app = { phase: 'gs', rwy: '09L', type: 'ils' };
+const ainfoVmApp = AircraftInfo.build(ainfoArr, ainfoCtx);
+const ainfoAppOk = /ILS 09L/.test(ainfoVmApp.plan.approach) && ainfoVmApp.plan.expectedRwy === '09L';
+
+console.log('AINFO -> origin', ainfoVmArr.plan.origin, '| eta', ainfoEtaArr.text, '| dep', ainfoVmDep.plan.dest, ainfoVmDep.plan.expectedRwy, '| app', ainfoVmApp.plan.approach);
+console.log(ainfoOriginOk && ainfoStarOk && ainfoRwyOk && ainfoEtaOk && ainfoGroupsOk && ainfoEtaND && ainfoDepOk && ainfoDepNoEta && ainfoAppOk
+  ? 'OK AIRCRAFT INFO (origem, STAR, pista, ETA, grupos, saída, aproximação)'
+  : 'FALHA AIRCRAFT INFO ' + JSON.stringify({
+    ainfoOriginOk, ainfoStarOk, ainfoRwyOk, ainfoEtaOk, ainfoGroupsOk, ainfoEtaND, ainfoDepOk, ainfoDepNoEta, ainfoAppOk,
+    eta: ainfoEtaArr, approach: ainfoVmApp.plan.approach,
+  }));
+
+// ---------- inserção de indicativo (lógica pura, espelha UI.insertCallsign) ----------
+function insertCallsignPure(cur, cs) {
+  const lead = String(cur).replace(/^\s+/, '');
+  const m = lead.match(/^(\S+)(?:\s+([\s\S]*))?$/);
+  const first = m ? m[1] : '';
+  if (!lead) return cs + ' ';
+  if (first.toUpperCase() === cs.toUpperCase()) {
+    const rest = m && m[2] != null ? m[2] : '';
+    return rest ? cs + ' ' + rest : cs + ' ';
+  }
+  return cs + ' ';
+}
+const icEmpty = insertCallsignPure('', 'GLO1234') === 'GLO1234 ';
+const icSameKeep = insertCallsignPure('TAM3412 HDG 180', 'TAM3412') === 'TAM3412 HDG 180';
+const icDiffReplace = insertCallsignPure('HDG 180', 'GLO1234') === 'GLO1234 ';
+const icOtherAcReplace = insertCallsignPure('TAM3412 A 6000', 'GLO1234') === 'GLO1234 ';
+const icSameBare = insertCallsignPure('GLO1234', 'GLO1234') === 'GLO1234 ';
+console.log('CSINS ->', JSON.stringify({ icEmpty, icSameKeep, icDiffReplace, icOtherAcReplace, icSameBare }));
+console.log(icEmpty && icSameKeep && icDiffReplace && icOtherAcReplace && icSameBare
+  ? 'OK CALLSIGN INSERT (vazia, mesmo preserva, diferente substitui)'
+  : 'FALHA CALLSIGN INSERT ' + JSON.stringify({ icEmpty, icSameKeep, icDiffReplace, icOtherAcReplace, icSameBare }));
+

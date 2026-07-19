@@ -30,7 +30,9 @@ const DATA = {
   AIRLINES: [],
 
   // ---------- espaço aéreo ativo (preenchido por setAirport) ----------
-  FIXES: {}, RUNWAYS: {}, RWY_PAIR: {}, STARS: {}, SIDS: {}, DESTS: {},
+  // ORIGINS: cidades/aeroportos de procedência por fixo de entrada de STAR
+  // (simétrico a DESTS, que é por fixo de saída de SID). Opcional no JSON.
+  FIXES: {}, RUNWAYS: {}, RWY_PAIR: {}, STARS: {}, SIDS: {}, DESTS: {}, ORIGINS: {},
   CONFIGS: {}, SEPARATION: null,
   AIRPORT: { icao: '----', name: '', elev: 0, range: 60, gsSlopeFtNm: 318 },
 
@@ -41,6 +43,7 @@ const DATA = {
     this.STARS = j.stars;
     this.SIDS = j.sids;
     this.DESTS = j.dests;
+    this.ORIGINS = j.origins || {};
     this.CONFIGS = j.configs;
     this.AIRPORT = {
       icao: j.icao, name: j.name, elev: j.elev ?? 0,

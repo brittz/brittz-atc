@@ -216,7 +216,9 @@ const game = {
   select(a) {
     this.selected = a;
     if (core) core.selected = a; // contexto para runCommand (omitir callsign)
-    if (a) document.getElementById('cmdInput').value = a.cs + ' ';
+    // preenche o indicativo pela ação reutilizável (preserva edição do mesmo
+    // indicativo; no toque não abre o teclado)
+    if (a) UI.insertCallsign(a.cs);
     UI.refreshSelPanel();
     UI.refreshStrips();
   },

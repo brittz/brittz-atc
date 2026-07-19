@@ -499,6 +499,8 @@ class GameCore {
       kind: 'arr', x: entry[0], y: entry[1], alt, spd: 290,
       hdg: U.brg(entry[0], entry[1], U.fix(route[1])[0], U.fix(route[1])[1]),
       star: starId,
+      origin: (DATA.ORIGINS[star.entry] && DATA.ORIGINS[star.entry].length)
+        ? U.pick(DATA.ORIGINS[star.entry]) : null,
       nav: { mode: 'route', route, idx: 1 },
       spawnT: this.time,
     });
@@ -832,7 +834,7 @@ class GameCore {
         x: a.x, y: a.y, alt: a.alt, spd: a.spd, hdg: a.hdg, vs: a.vs,
         clrAlt: a.clrAlt, clrSpd: a.clrSpd, spdMode: a.spdMode,
         state: a.state, nav: a.nav, app: a.app, landClr: a.landClr,
-        star: a.star, sid: a.sid, dest: a.dest, rwy: a.rwy,
+        star: a.star, sid: a.sid, dest: a.dest, origin: a.origin, rwy: a.rwy,
         flightPlan: a.flightPlan ? {
           type: a.flightPlan.type, name: a.flightPlan.name,
           route: (a.flightPlan.route || []).slice(),
