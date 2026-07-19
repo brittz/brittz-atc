@@ -21,6 +21,8 @@
   comunicações) insere-o na caixa de comando via ação reutilizável `UI.insertCallsign`:
   caixa vazia insere só o indicativo; mesmo indicativo preserva a edição em curso;
   indicativo diferente substitui. No celular não abre o teclado (proteção mobile mantida)
+- **Clique no strip** (linha ou indicativo) seleciona a aeronave como no radar: abre
+  `selPanel` + painel de ações rápidas e preenche a caixa (`game.select` / `activateCallsign`)
 - Chegadas passam a ter **procedência** (`origin`), simétrica ao destino das saídas
   (`DATA.ORIGINS` por fixo de entrada da STAR; opcional no JSON do aeroporto)
 - SPEC: `docs/SPECS/interface/aircraft-information-panel.md`

@@ -341,7 +341,7 @@ const UI = (() => {
   // fragmento HTML de um indicativo clicável (delegação trata o clique)
   function csTag(cs, label) {
     if (!cs) return esc(label || '');
-    return `<span class="csref" role="button" tabindex="0" data-cs="${esc(cs)}" title="Inserir ${esc(cs)} na caixa de comando">${esc(label || cs)}</span>`;
+    return `<span class="csref" role="button" tabindex="0" data-cs="${esc(cs)}" title="Selecionar ${esc(cs)} / inserir na caixa de comando">${esc(label || cs)}</span>`;
   }
   // Insere o indicativo na caixa de comando (ver SPEC aircraft-information-panel).
   // Vazia → só o indicativo; mesmo indicativo → preserva a edição em curso;
@@ -366,6 +366,15 @@ const UI = (() => {
       const end = input.value.length;
       try { input.setSelectionRange(end, end); } catch (e) {}
     }
+  }
+  // Clique no indicativo de uma aeronave viva: mesmo caminho do radar
+  // (game.select → caixa de comando + selPanel + quickPanel). Se a aeronave
+  // já saiu, só insere o texto (log / histórico).
+  function activateCallsign(cs) {
+    if (!cs) return;
+    const ac = game.aircraft.find(x => x.cs === cs && x.state !== 'done');
+    if (ac) game.select(ac);
+    else insertCallsign(cs);
   }
 
   // ---------------- painéis de seleção (informações + ações) ----------------
@@ -809,15 +818,23 @@ const UI = (() => {
     const selExpandBtn = $('selExpand');
     if (selExpandBtn) selExpandBtn.onclick = () => { selExpanded = !selExpanded; refreshSelPanel(); };
 
-    // clique/Enter em qualquer indicativo (.csref) insere-o na caixa de comando
+    // clique/Enter em qualquer indicativo (.csref): seleciona a aeronave viva
+    // (painéis + caixa) — paridade com o clique no radar; senão só insere o texto
     document.addEventListener('click', e => {
       const t = e.target.closest && e.target.closest('.csref');
-      if (t && t.dataset.cs) { e.preventDefault(); insertCallsign(t.dataset.cs); }
-    });
+      if (t && t.dataset.cs) {
+        e.preventDefault();
+        e.stopPropagation();
+        activateCallsign(t.dataset.cs);
+      }
+    }, true);
     document.addEventListener('keydown', e => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       const t = e.target && e.target.closest && e.target.closest('.csref');
-      if (t && t.dataset.cs) { e.preventDefault(); insertCallsign(t.dataset.cs); }
+      if (t && t.dataset.cs) {
+        e.preventDefault();
+        activateCallsign(t.dataset.cs);
+      }
     });
 
     $('btnCharts').onclick = openCharts;
