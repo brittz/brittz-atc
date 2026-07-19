@@ -27,6 +27,10 @@
   (`DATA.ORIGINS` por fixo de entrada da STAR; opcional no JSON do aeroporto)
 - SPEC: `docs/SPECS/interface/aircraft-information-panel.md`
 
+### Emergência
+- Removido o rádio automático de outras chegadas (“ciente prioridade para \<CS\>, podemos
+  aceitar vetores ou espera”) ao declarar MAYDAY — atrapalhava sem valor operacional
+
 ## [0.9.4] — 2026-07-18
 
 ### Voz — radiotelefonia (TTS)

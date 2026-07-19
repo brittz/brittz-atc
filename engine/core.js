@@ -321,8 +321,6 @@ class GameCore {
     this.emit({ type: 'radio', who: 'sys', text: 'Estado operacional do aeroporto: EMERGÊNCIA. Priorize ' + ac.cs + ' — operações em pistas independentes podem continuar.', cls: 'bad' });
     for (const other of this.aircraft) {
       if (other === ac || other.state === 'done') continue;
-      if (other.airborne && other.kind === 'arr' && U.dist(0, 0, other.x, other.y) < 28 && other.app.phase === 'none')
-        this.radioPilot(other, 'ciente prioridade para ' + ac.cs + ', podemos aceitar vetores ou espera', U.rnd(2, 6));
       if (other.kind === 'dep' && ['taxi', 'holdshort', 'lineup'].includes(other.state)) {
         const hold = this.departureHoldReason(other.rwy || DATA.CONFIGS[this.cfg].depRwy, other);
         if (hold)
