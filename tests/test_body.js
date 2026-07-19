@@ -1043,3 +1043,27 @@ console.log(etmFarOk && etmParOk && etmCloseHold && etmClosePar && etmWhyOk
   ? 'OK EMERGENCY TRAFFIC (longe libera, paralela livre, final retém com motivo)'
   : 'FALHA EMERGENCY TRAFFIC ' + JSON.stringify({ etmFarOk, etmParOk, etmCloseHold, etmClosePar, etmWhy }));
 
+// ---------- companhias históricas (AirlineService → DATA.AIRLINES) ----------
+const histActiveOnly = __AIRLINES_ACTIVE__;
+const histWithHist = __AIRLINES_HIST__;
+const histHasActive = histActiveOnly.some(a => a.code === 'TAM') && histActiveOnly.some(a => a.code === 'GLO');
+const histNoVarig = !histActiveOnly.some(a => a.code === 'VRG');
+const histHasVarig = histWithHist.some(a => a.code === 'VRG' && a.radio === 'Varig');
+const histHasVasp = histWithHist.some(a => a.code === 'VSP');
+const histBigger = histWithHist.length > histActiveOnly.length;
+DATA.AIRLINES = histWithHist;
+const histSpeak = RadioPhrase.speakCallsign('VRG1234', { lang: 'pt' });
+const histSpeakOk = histSpeak === 'Varig Um Dois Três Quatro';
+DATA.AIRLINES = histActiveOnly;
+const histMeta = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/airlines.json'), 'utf8')).airlines;
+const histMetaOk = histMeta.every(a =>
+  a.name && a.icao && a.callsign && a.period && a.status &&
+  (a.status === 'ativa' || a.ceased != null || a.status === 'incorporada')
+);
+console.log('HIST -> active', histActiveOnly.length, '| +hist', histWithHist.length, '| speak', histSpeak);
+console.log(histHasActive && histNoVarig && histHasVarig && histHasVasp && histBigger && histSpeakOk && histMetaOk
+  ? 'OK HISTORICAL AIRLINES (filtro ativa, pool histórico, fraseologia, metadados)'
+  : 'FALHA HISTORICAL AIRLINES ' + JSON.stringify({
+    histHasActive, histNoVarig, histHasVarig, histHasVasp, histBigger, histSpeakOk, histMetaOk, histSpeak,
+  }));
+

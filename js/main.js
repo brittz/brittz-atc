@@ -13,7 +13,8 @@ async function loadVersionInfo() {
   const res = await fetch('version.md', { cache: 'no-store' });
   if (!res.ok) throw new Error('HTTP ' + res.status + ' ao carregar version.md');
   const text = await res.text();
-  const m = text.match(/^## \[([^\]]+)\] — (\d{4}-\d{2}-\d{2})$/m);
+  // Aceita em-dash (—) ou hífen (-) entre versão e data (publish agents às vezes usam "-")
+  const m = text.match(/^## \[([^\]]+)\]\s+[—\-]\s+(\d{4}-\d{2}-\d{2})$/m);
   if (!m) throw new Error('version.md sem cabeçalho de versão válido');
   return {
     number: m[1],
@@ -54,9 +55,18 @@ const game = {
   selected: null,
   _simSpeed: 1,
   paused: false,
-  settings: { sound: true, tts: true, sweep: true, fixNames: true, trailLine: false },
+  settings: {
+    sound: true, tts: true, sweep: true, fixNames: true, trailLine: false,
+    historicalAirlines: false,
+  },
   airportJson: null,
   versionInfo: { number: '—', date: '', label: 'v—', fullLabel: 'Versão —' },
+
+  /** Aplica o pool de companhias (AirlineService → DATA.AIRLINES). */
+  applyAirlines() {
+    if (typeof AirlineService === 'undefined' || !AirlineService.isLoaded()) return;
+    AirlineService.applyToData(!!this.settings.historicalAirlines);
+  },
 
   // velocidade de simulação: no multiplayer o tempo é do servidor
   get simSpeed() { return this._simSpeed; },
@@ -257,6 +267,7 @@ const game = {
 
   // ---------- ciclo de vida da partida ----------
   start(cfg, traffic) {
+    this.applyAirlines();
     core = new GameCore(this.airportJson, { cfg, traffic, emit: handleEmit });
     core.selected = this.selected;
     this.simSpeed = 1;
@@ -290,6 +301,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   const cv = document.getElementById('radar');
   Radar.init(cv, game);
   UI.init(game);
+  try {
+    await AirlineService.load('data/airlines.json');
+    game.applyAirlines();
+  } catch (e) {
+    console.error('Falha ao carregar companhias:', e);
+    UI.logSys('Não foi possível carregar data/airlines.json: ' + e.message, 'bad');
+  }
   try {
     game.versionInfo = await loadVersionInfo();
   } catch (e) {
@@ -386,7 +404,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       () => mpMsg('Sem servidor multiplayer — sirva o jogo com "cd server && node index.js" e abra por lá.'));
   }
   try { $id('mpNick').value = localStorage.getItem('atcv-nick') || ''; } catch (e) {}
-  $id('mpCreate').onclick = () => mpGo(() => Net.create(selCfg, selTraffic));
+  $id('mpCreate').onclick = () => mpGo(() =>
+    Net.create(selCfg, selTraffic, !!game.settings.historicalAirlines));
   $id('mpJoin').onclick = () => {
     const code = $id('mpCode').value.trim().toUpperCase();
     if (!/^[A-Z]{5}$/.test(code)) { mpMsg('Código da sessão: 5 letras (ex.: KDQXZ).'); return; }

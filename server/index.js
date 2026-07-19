@@ -91,7 +91,8 @@ function route(conn, msg) {
       if (conn.session) return safeSend(conn.ws, { t: 'error', msg: 'já está em uma sessão' });
       const cfg = typeof msg.cfg === 'string' ? msg.cfg : undefined;
       const traffic = typeof msg.traffic === 'string' ? msg.traffic : undefined;
-      const session = manager.create(conn.nick, conn.ws, cfg, traffic);
+      const historicalAirlines = !!msg.historicalAirlines;
+      const session = manager.create(conn.nick, conn.ws, cfg, traffic, { historicalAirlines });
       conn.session = session;
       safeSend(conn.ws, session.sessionSnapshot());
       break;

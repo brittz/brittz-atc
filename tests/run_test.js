@@ -5,8 +5,16 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const SCRATCH = __dirname;
+const { AirlineService } = require(path.join(ROOT, 'js', 'airline_service.js'));
+AirlineService.loadSync(path.join(ROOT, 'data', 'airlines.json'));
+const airlinesActive = AirlineService.spawnList(false);
+const airlinesHist = AirlineService.spawnList(true);
+
 const src = ['engine/data.js', 'engine/radio_phrase.js', 'engine/separation.js', 'engine/holding.js', 'engine/emergency.js', 'engine/runway_state.js', 'engine/emergency_units.js', 'engine/emergency_response.js', 'engine/emergency_traffic.js', 'engine/approach.js', 'engine/aircraft.js', 'engine/commands.js', 'engine/core.js']
   .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'))
   .join('\n')
+  + '\nDATA.AIRLINES = ' + JSON.stringify(airlinesActive) + ';\n'
+  + 'const __AIRLINES_ACTIVE__ = ' + JSON.stringify(airlinesActive) + ';\n'
+  + 'const __AIRLINES_HIST__ = ' + JSON.stringify(airlinesHist) + ';\n'
   + '\n' + fs.readFileSync(path.join(SCRATCH, 'test_body.js'), 'utf8');
 eval(src);

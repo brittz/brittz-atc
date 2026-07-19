@@ -339,6 +339,7 @@ button.primary:hover { background: #1a5a42; }
 .modalBox.settings label:hover { background: #11202c; }
 .modalBox.settings input { margin-right: 8px; accent-color: var(--good); }
 .modalBox.settings .tiny { margin-top: 12px; line-height: 1.4; }
+.modalBox.settings .setHint { margin: -2px 0 8px 28px; color: var(--dim); }
 
 /* ===== ATIS ===== */
 .modalBox.atis { width: 460px; max-width: 92vw; }

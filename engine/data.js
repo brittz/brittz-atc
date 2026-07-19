@@ -24,18 +24,10 @@ const DATA = {
     AW39: { climb: 1500, desc: 1200, accel: 2.2, vr: 0, app: 70, min: 0, max: 150, wtc: 'L', heli: true },
   },
 
-  // companhias: prefixo, nome rádio, tipos que operam, peso p/ sorteio
-  // (um aeroporto pode substituir via campo "airlines" no seu JSON)
-  AIRLINES: [
-    { code:'TAM', radio:'LATAM',        types:['A320','A21N','A20N','B77W'], w:5 },
-    { code:'GLO', radio:'Gol',          types:['B738'],                      w:5 },
-    { code:'AZU', radio:'Azul',         types:['E195','A20N','AT76'],        w:5 },
-    { code:'PTB', radio:'Passaredo',    types:['AT76'],                      w:1 },
-    { code:'TAP', radio:'Air Portugal', types:['A21N','B789'],               w:1 },
-    { code:'ARG', radio:'Argentina',    types:['B738'],                      w:1 },
-    { code:'AAL', radio:'American',     types:['B77W','B789'],               w:1 },
-    { code:'AFR', radio:'Air France',   types:['B77W'],                      w:1 },
-  ],
+  // Pool de spawn: preenchido por AirlineService.applyToData() a partir de
+  // data/airlines.json (não cadastrar companhias aqui). Um aeroporto pode
+  // substituir via campo "airlines" no seu JSON.
+  AIRLINES: [],
 
   // ---------- espaço aéreo ativo (preenchido por setAirport) ----------
   FIXES: {}, RUNWAYS: {}, RWY_PAIR: {}, STARS: {}, SIDS: {}, DESTS: {},

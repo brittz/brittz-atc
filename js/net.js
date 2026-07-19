@@ -86,7 +86,12 @@ const Net = {
 
   // ---------- API (cliente → servidor, §3) ----------
   hello(nick) { this.nick = nick; this.send({ t: 'hello', nick }); },
-  create(cfg, traffic) { this.send({ t: 'create', cfg, traffic }); },
+  create(cfg, traffic, historicalAirlines) {
+    this.send({
+      t: 'create', cfg, traffic,
+      historicalAirlines: !!historicalAirlines,
+    });
+  },
   join(code) { this.send({ t: 'join', code: String(code || '').toUpperCase() }); },
   setPosition(pos) { this.send({ t: 'position', pos }); },
   start() { this.send({ t: 'start' }); },

@@ -744,14 +744,22 @@ const UI = (() => {
     $('btnCenter').onclick = () => Radar.fitView();
 
     // configurações de exibição (persistidas em localStorage)
-    const setChk = (id, key) => {
+    const setChk = (id, key, onChange) => {
       const el = $(id);
+      if (!el) return;
       el.checked = !!game.settings[key];
-      el.onchange = () => { game.settings[key] = el.checked; game.savePrefs(); };
+      el.onchange = () => {
+        game.settings[key] = el.checked;
+        game.savePrefs();
+        if (onChange) onChange(el.checked);
+      };
     };
     setChk('setTrailLine', 'trailLine');
     setChk('setSweep', 'sweep');
     setChk('setFixNames', 'fixNames');
+    setChk('setHistoricalAirlines', 'historicalAirlines', () => {
+      if (game.applyAirlines) game.applyAirlines();
+    });
     $('btnSettings').onclick = () => $('settingsModal').classList.remove('hidden');
 
     // sidebar recolhível (essencial no celular)

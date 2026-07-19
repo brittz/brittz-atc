@@ -167,6 +167,8 @@
     <label><input type="checkbox" id="setTrailLine"> Linha de histórico da rota (só da aeronave selecionada)</label>
     <label><input type="checkbox" id="setSweep"> Varredura do radar (animação)</label>
     <label><input type="checkbox" id="setFixNames"> Nomes dos fixos no radar</label>
+    <label><input type="checkbox" id="setHistoricalAirlines"> Companhias Históricas</label>
+    <p class="tiny setHint">Inclui companhias aéreas brasileiras que já encerraram suas operações na geração de tráfego.</p>
     <p class="tiny">As preferências e o recorde de pontuação ficam salvos apenas neste navegador
        (localStorage) — nada é enviado a servidores.</p>
   </div>
@@ -316,6 +318,7 @@
 <script src="engine/aircraft.js"></script>
 <script src="engine/commands.js"></script>
 <script src="engine/core.js"></script>
+<script src="js/airline_service.js"></script>
 <script src="js/radar.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/net.js"></script>

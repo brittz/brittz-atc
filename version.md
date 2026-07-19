@@ -6,7 +6,17 @@
 > **Release candidate:** enquanto o cabeçalho for `X.Y.Z-rc`, as mudanças acumulam neste
 > bloco. Só vira versão fechada (`X.Y.Z`) quando o usuário pedir para fechar/commitar.
 
-## [0.9.2] - 2026-07-18
+## [0.9.3] — 2026-07-18
+
+### Companhias históricas
+- Opção **Companhias Históricas** nas configurações (desligada por padrão): inclui operadores brasileiros encerrados/incorporados na geração de tráfego
+- Base em `data/airlines.json` via `AirlineService` (engine só consome `DATA.AIRLINES`); SPEC em `docs/SPECS/content/historical-airlines.md`
+- Multiplayer: host envia `historicalAirlines` no `create` da sessão
+
+### Changelog — versão na UI
+- Parser de `version.md` aceita hífen (`-`) ou em-dash (`—`) entre versão e data; o cabeçalho `## [0.9.2] - …` deixava de casar e a UI ficava em `v?` / «Versão indisponível»
+
+## [0.9.2] — 2026-07-18
 
 ### Uso das pistas — troca direta
 - No ATIS, dá para inverter pouso/decolagem entre as pistas do fluxo sem precisar marcar «Ambas» antes: ao dedicar uma pista a um papel exclusivo, a outra se complementa automaticamente

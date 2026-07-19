@@ -8,6 +8,9 @@
 const fs = require('fs');
 const path = require('path');
 const { GameCore } = require('../engine/core.js');
+const { AirlineService } = require('../js/airline_service.js');
+
+if (!AirlineService.isLoaded()) AirlineService.loadSync();
 
 // comandos de autoridade da TWR (§4) — tudo que não estiver aqui é APP
 const TWR_CMDS = new Set([
@@ -37,11 +40,12 @@ function randCode() {
 }
 
 class Session {
-  constructor(code, hostNick, cfg, traffic, store, manager) {
+  constructor(code, hostNick, cfg, traffic, store, manager, opts) {
     this.code = code;
     this.host = hostNick;
     this.cfg = cfg || '09';
     this.traffic = traffic || 'normal';
+    this.historicalAirlines = !!(opts && opts.historicalAirlines);
     this.store = store;
     this.manager = manager;
 
@@ -123,6 +127,7 @@ class Session {
     return {
       t: 'session', code: this.code, host: this.host, state: this.state,
       players: this.playersList(), cfg: this.cfg, traffic: this.traffic,
+      historicalAirlines: this.historicalAirlines,
     };
   }
 
@@ -142,6 +147,7 @@ class Session {
     }
 
     this.airportJson = airportJson;
+    AirlineService.applyToData(this.historicalAirlines);
     this.core = new GameCore(airportJson, {
       cfg: this.cfg, traffic: this.traffic, emit: (ev) => this._handleEmit(ev),
     });
@@ -296,10 +302,10 @@ class SessionManager {
     this.sessions = new Map(); // code -> Session
   }
 
-  create(hostNick, ws, cfg, traffic) {
+  create(hostNick, ws, cfg, traffic, opts) {
     let code;
     do { code = randCode(); } while (this.sessions.has(code));
-    const session = new Session(code, hostNick, cfg, traffic, this.store, this);
+    const session = new Session(code, hostNick, cfg, traffic, this.store, this, opts);
     session.addPlayer(hostNick, ws);
     this.sessions.set(code, session);
     return session;

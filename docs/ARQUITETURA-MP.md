@@ -20,6 +20,7 @@ engine/            motor compartilhado (browser + Node)
   core.js          NOVO: classe GameCore (simulação headless, extraída de js/main.js)
 js/                cliente browser
   main.js          adapta GameCore ao DOM/single-player (facade `game` preservada)
+  airline_service.js  base de companhias (data/airlines.json) → DATA.AIRLINES
   net.js           NOVO: cliente WebSocket + modo multiplayer
   radar.js, ui.js  inalterados na medida do possível
 server/
@@ -27,6 +28,8 @@ server/
   sessions.js      NOVO: gerência de sessões/posições/chat
   store.js         NOVO: persistência (MongoDB opcional via env, fallback memória)
   package.json     deps: ws (mongodb opcional)
+data/
+  airlines.json    companhias ativas e históricas (AirlineService)
 ```
 
 Compatibilidade dual: cada arquivo de `engine/` termina com:
@@ -82,7 +85,7 @@ para que radar.js e ui.js não precisem mudar.
 Cliente → Servidor:
 ```
 {t:'hello', nick}                       → responde hello-ok|error
-{t:'create', cfg, traffic}              → cria sessão SBCV, vira host, responde session
+{t:'create', cfg, traffic, historicalAirlines?}  → cria sessão SBCV, vira host, responde session
 {t:'join', code}                        → entra no lobby
 {t:'position', pos}                     → 'TWR'|'APP'|'OBS' (livre se vaga)
 {t:'start'}                             → só host; inicia
@@ -90,11 +93,14 @@ Cliente → Servidor:
 {t:'chat', text, to?}                   → to = nick (privado) ou ausente (sessão)
 {t:'leave'}
 ```
+`historicalAirlines` (bool, opcional): se true, o host inclui companhias
+encerradas/incorporadas na geração de tráfego da sessão (via AirlineService →
+DATA.AIRLINES antes do GameCore). Padrão false.
 
 Servidor → Cliente:
 ```
 {t:'hello-ok', nick}
-{t:'session', code, host, state:'lobby'|'ativa', players:[{nick,pos}], cfg, traffic}
+{t:'session', code, host, state:'lobby'|'ativa', players:[{nick,pos}], cfg, traffic, historicalAirlines?}
 {t:'start', airport:<JSON completo do aeroporto>, cfg, time}
 {t:'snap', time, score, stats, weather:{dir,spd,qnh,temp}, atis, cfg, runwayUse, airportState, runwayStates, emergencyUnits, emergencyResponse, aircraft:[...]}
 {t:'radio', who, cs?, radio?, text, cls?}
